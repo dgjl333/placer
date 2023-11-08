@@ -1,8 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
-using UnityEngine.Rendering;
-using UnityEngine.InputSystem.HID;
 
 public class Placer : EditorWindow
 
@@ -22,7 +20,7 @@ public class Placer : EditorWindow
     public float offset = 0f;
     public bool deletion = false;
 
-    public GameObject prefab=null;
+    public GameObject prefab = null;
     public Material previewMaterial;
 
     SerializedObject so;
@@ -37,19 +35,20 @@ public class Placer : EditorWindow
     SerializedProperty propColor;
     SerializedProperty propDeletion;
 
-
-    private bool isPrefab;
+    private Point hitPoint;
+    private GameObject originalPrefab;
     private float[] randArray = new float[maxSpawnCount];
     private List<Point> pointList = new List<Point>();
     private Vector2[] randPoints;
     private float raycastOffset = 1.5f;
     private static int maxSpawnCount = 100;
     private bool showPreviewSetting = false;
-    private struct LookDirection
+    private int id;
+    private struct LookInfo
     {
-       public Vector3 position;
-       public Vector3 forward;
-       public Vector3 up;
+        public Vector3 position;
+        public Vector3 forward;
+        public Vector3 up;
     }
     private struct Point
     {
@@ -107,13 +106,9 @@ public class Placer : EditorWindow
 
         if (so.ApplyModifiedProperties())
         {
-            if (prefab == null)
+            if (prefab != null)
             {
-                isPrefab = false;
-            }
-            else
-            {
-                isPrefab = (prefab.gameObject.scene.name == null);
+                originalPrefab = PrefabUtility.GetCorrespondingObjectFromSource(prefab);
             }
             GenerateRandomPoints();
             GetNewRandomValue();
@@ -127,6 +122,7 @@ public class Placer : EditorWindow
     }
     private void DuringSceneGUI(SceneView scene)
     {
+
         if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.ScrollLock) //オンオフ切り替え
         {
             so.Update();
@@ -139,22 +135,22 @@ public class Placer : EditorWindow
             return;
         }
 
-
         Handles.zTest = CompareFunction.LessEqual;
-        List<LookDirection> looksList = new List<LookDirection>();
+        List<LookInfo> looksList = new List<LookInfo>();
         Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
         if (Event.current.type == EventType.MouseMove)
         {
             scene.Repaint();
         }
-        
+
         Camera cam = scene.camera;
         if (Physics.Raycast(ray, out RaycastHit hit))
         {
             Vector3 hitNormal = hit.normal;
             Vector3 hitTangent = Vector3.Cross(hitNormal, cam.transform.up).normalized;
             Vector3 hitBitangent = Vector3.Cross(hitNormal, hitTangent);
-
+            hitPoint.position = hit.point;
+            hitPoint.rotation = Quaternion.LookRotation(hitTangent, hitNormal);
             if (random || deletion)
             {
                 DrawDisc(hit);
@@ -173,7 +169,7 @@ public class Placer : EditorWindow
                         Ray pointRay = new Ray(pointWorld, -hitNormal);
                         if (Physics.Raycast(pointRay, out RaycastHit pointHit))
                         {
-                            LookDirection lookdirection;
+                            LookInfo lookdirection;
                             lookdirection.forward = Vector3.forward;
                             lookdirection.up = pointHit.normal;
                             lookdirection.position = pointHit.point;
@@ -181,15 +177,15 @@ public class Placer : EditorWindow
                         }
                     }
                 }
-               
+
             }
             else
             {
-                LookDirection lookdirection;
-                lookdirection.forward = hitTangent;
-                lookdirection.up = hitNormal;
-                lookdirection.position = hit.point;
-                looksList.Add(lookdirection);
+                LookInfo lookInfo;
+                lookInfo.forward = hitTangent;
+                lookInfo.up = hitNormal;
+                lookInfo.position = hit.point;
+                looksList.Add(lookInfo);
                 float scale = Vector3.Distance(cam.transform.position, hit.point) * 0.05f;
                 Handles.color = Color.red;
                 Handles.DrawAAPolyLine(5, hit.point, hit.point + hitTangent * scale);
@@ -206,7 +202,11 @@ public class Placer : EditorWindow
             bool ctrl = (Event.current.modifiers & EventModifiers.Control) != 0;
             if (ctrl && Event.current.isMouse && Event.current.type == EventType.MouseDown)
             {
-                Event.current.Use();
+                if (originalPrefab != null)
+                {
+                    DeleteAroundPoint(hit);
+                    Event.current.Use();
+                }
             }
         }
         else
@@ -234,9 +234,9 @@ public class Placer : EditorWindow
             bool shift = (Event.current.modifiers & EventModifiers.Shift) != 0;
             bool ctrl = (Event.current.modifiers & EventModifiers.Control) != 0;
 
-            if (prefab != null && isPrefab && !shift)
+            if (originalPrefab != null && !shift)
             {
-                DrawPreview(prefab, false);
+                DrawPreview(originalPrefab, false);
             }
             if (shift) //スナッププレビュー
             {
@@ -245,10 +245,19 @@ public class Placer : EditorWindow
                     DrawPreview(go, true);
                 }
 
-                if (Event.current.isMouse && Event.current.type == EventType.MouseDown && Event.current.button == 1) //右クリック
+                if (Event.current.isMouse && Event.current.type == EventType.MouseDown && Event.current.button == 0) //leftクリック
                 {
-                    SnapObjects(pointList);
+
                     Event.current.Use();
+                    SnapObjects(pointList);
+                }
+                if (Selection.gameObjects.Length > 0)
+                {
+                    id = Selection.gameObjects[0].gameObject.GetInstanceID();
+                }
+                if (id != 0)
+                {
+                    Selection.activeInstanceID = id;
                 }
             }
             if (ctrl)
@@ -271,13 +280,43 @@ public class Placer : EditorWindow
             }
         }
 
-       
+
+    }
+
+    private bool IsPrefab(GameObject o)
+    {
+        return o.scene.name == null;
+    }
+
+    private void DeleteAroundPoint(RaycastHit hit)
+    {
+        Collider[] colliders = Physics.OverlapSphere(hit.point, radius);
+        foreach (Collider c in colliders)
+        {
+            GameObject o = c.gameObject;
+
+            if (originalPrefab == PrefabUtility.GetCorrespondingObjectFromSource(o))
+            {
+                if (DistancePlanePoint(hit.normal, hit.point, o.transform.position) < 1f) //height range to delete
+                {
+                    Undo.DestroyObjectImmediate(o);
+                }
+            }
+        }
     }
     private void DrawPreview(GameObject go, bool isSnappedMode)
     {
-        for (int i=0;i<pointList.Count;i++)
+        for (int i = 0; i < pointList.Count; i++)
         {
-            Matrix4x4 localToWorld = Matrix4x4.TRS(pointList[i].position, pointList[i].rotation, Vector3.one);
+            Matrix4x4 localToWorld;
+            if (isSnappedMode)
+            {
+                localToWorld = Matrix4x4.TRS(hitPoint.position, hitPoint.rotation, Vector3.one);
+            }
+            else
+            {
+                localToWorld = Matrix4x4.TRS(pointList[i].position, pointList[i].rotation, Vector3.one);
+            }
             MeshFilter[] filters = go.GetComponentsInChildren<MeshFilter>();
             previewMaterial.SetPass(0);
             foreach (MeshFilter filter in filters)
@@ -296,29 +335,32 @@ public class Placer : EditorWindow
         }
     }
 
+
     private void SnapObjects(List<Point> pointList)
     {
-        if (Selection.gameObjects.Length == 0){
+        if (Selection.gameObjects.Length == 0)
+        {
             return;
         }
         for (int i = 0; i < Selection.gameObjects.Length; i++)
         {
             Undo.RecordObject(Selection.gameObjects[i].transform, "Snap");
-            Selection.gameObjects[i].transform.position = pointList[i % pointList.Count].position + pointList[i % pointList.Count].rotation * new Vector3(0f, offset, 0f);
-            Selection.gameObjects[i].transform.rotation = pointList[i % pointList.Count].rotation * Selection.gameObjects[i].transform.rotation;
+            Selection.gameObjects[i].transform.position = hitPoint.position + hitPoint.rotation * new Vector3(0f, offset, 0f);
+            Selection.gameObjects[i].transform.rotation = hitPoint.rotation * Selection.gameObjects[i].transform.rotation;
+
         }
     }
     private void SpawnPrefabs(List<Point> pointList)
     {
-        if (prefab == null || !isPrefab)
+        if (originalPrefab == null)
         {
             return;
         }
         foreach (Point point in pointList)
         {
-            GameObject spawnObject = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+            GameObject spawnObject = (GameObject)PrefabUtility.InstantiatePrefab(originalPrefab);
             Undo.RegisterCreatedObjectUndo(spawnObject, "Spawn Objects");
-            spawnObject.transform.position = point.position + point.rotation * new Vector3 (0f,offset,0f);
+            spawnObject.transform.position = point.position + point.rotation * new Vector3(0f, offset, 0f);
             spawnObject.transform.rotation = point.rotation * prefab.transform.rotation;
 
         }
@@ -359,6 +401,12 @@ public class Placer : EditorWindow
         Handles.color = radiusColor;
         Handles.DrawWireDisc(hit.point, hit.normal, radius);
         Handles.color = Color.white;
+    }
+
+    public static float DistancePlanePoint(Vector3 planeNormal, Vector3 planePoint, Vector3 point)
+    {
+
+        return Mathf.Abs(Vector3.Dot(planeNormal, (point - planePoint)));
     }
     public static void print(System.Object o)
     {
