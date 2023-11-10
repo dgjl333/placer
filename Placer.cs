@@ -1,6 +1,8 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
+using UnityEngine.Rendering;
+using UnityEngine.UIElements;
 
 public class Placer : EditorWindow
 
@@ -16,7 +18,7 @@ public class Placer : EditorWindow
     public bool on = true;
     public bool random = false;
     public bool randomRotation = false;
-    public Color radiusColor = Color.white;
+    public Color radiusColor = new Color(0.839f, 0.058f, 0.435f, 1f);
     public float offset = 0f;
     public bool deletion = false;
 
@@ -43,7 +45,6 @@ public class Placer : EditorWindow
     private float raycastOffset = 1.5f;
     private static int maxSpawnCount = 100;
     private bool showPreviewSetting = false;
-    private int id;
     private struct LookInfo
     {
         public Vector3 position;
@@ -108,7 +109,8 @@ public class Placer : EditorWindow
         {
             if (prefab != null)
             {
-                originalPrefab = PrefabUtility.GetCorrespondingObjectFromSource(prefab);
+                originalPrefab = PrefabUtility.GetCorrespondingObjectFromOriginalSource(prefab);
+                print(originalPrefab);
             }
             GenerateRandomPoints();
             GetNewRandomValue();
@@ -170,7 +172,7 @@ public class Placer : EditorWindow
                         if (Physics.Raycast(pointRay, out RaycastHit pointHit))
                         {
                             LookInfo lookdirection;
-                            lookdirection.forward = Vector3.forward;
+                            lookdirection.forward = Vector3.Cross(pointHit.normal, cam.transform.up).normalized;
                             lookdirection.up = pointHit.normal;
                             lookdirection.position = pointHit.point;
                             looksList.Add(lookdirection);
@@ -251,14 +253,6 @@ public class Placer : EditorWindow
                     Event.current.Use();
                     SnapObjects(pointList);
                 }
-                if (Selection.gameObjects.Length > 0)
-                {
-                    id = Selection.gameObjects[0].gameObject.GetInstanceID();
-                }
-                if (id != 0)
-                {
-                    Selection.activeInstanceID = id;
-                }
             }
             if (ctrl)
             {
@@ -325,7 +319,11 @@ public class Placer : EditorWindow
                 Matrix4x4 childMatrix = filter.transform.localToWorldMatrix;
                 Matrix4x4 yAxisOffsetMatrix = Matrix4x4.TRS(new Vector3(0f, offset, 0f), Quaternion.identity, Vector3.one);
                 Matrix4x4 ignoreParentPositionMatrix = Matrix4x4.TRS(-go.transform.position, Quaternion.identity, Vector3.one);
-                Matrix4x4 outputMatrix = localToWorld * ignoreParentPositionMatrix * yAxisOffsetMatrix * childMatrix;
+                if (isSnappedMode)
+                {
+                    ignoreParentPositionMatrix = Matrix4x4.TRS(Vector3.zero, Quaternion.Inverse(go.transform.rotation), Vector3.one) * ignoreParentPositionMatrix;
+                }
+                Matrix4x4 outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentPositionMatrix * childMatrix;
                 Graphics.DrawMeshNow(mesh, outputMatrix);
             }
             if (isSnappedMode)
@@ -346,7 +344,7 @@ public class Placer : EditorWindow
         {
             Undo.RecordObject(Selection.gameObjects[i].transform, "Snap");
             Selection.gameObjects[i].transform.position = hitPoint.position + hitPoint.rotation * new Vector3(0f, offset, 0f);
-            Selection.gameObjects[i].transform.rotation = hitPoint.rotation * Selection.gameObjects[i].transform.rotation;
+            Selection.gameObjects[i].transform.rotation = hitPoint.rotation;
 
         }
     }
@@ -361,7 +359,7 @@ public class Placer : EditorWindow
             GameObject spawnObject = (GameObject)PrefabUtility.InstantiatePrefab(originalPrefab);
             Undo.RegisterCreatedObjectUndo(spawnObject, "Spawn Objects");
             spawnObject.transform.position = point.position + point.rotation * new Vector3(0f, offset, 0f);
-            spawnObject.transform.rotation = point.rotation * prefab.transform.rotation;
+            spawnObject.transform.rotation = point.rotation * originalPrefab.transform.rotation;
 
         }
         if (random)
