@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 public class Placer : EditorWindow
 
@@ -27,7 +28,6 @@ public class Placer : EditorWindow
     SerializedObject so;
     SerializedProperty propRadius;
     SerializedProperty propSpawnCount;
-    SerializedProperty propOn;
     SerializedProperty propPrefab;
     SerializedProperty propOffset;
     SerializedProperty propRandomRotation;
@@ -39,16 +39,20 @@ public class Placer : EditorWindow
 
     private Pose hitPoint;
     private GameObject originalPrefab;
-    private float[] randArray = new float[maxSpawnCount];
+    private float[] randEulerArray = new float[20];
     private List<Pose> poseList = new List<Pose>();
     private Vector2[] randPoints;
     private float raycastOffset = 1.5f;
     private static int maxSpawnCount = 100;
     private bool showPreviewSetting = false;
-    private float deletionHeightBound = 1f;
     private float discThickness = 2f;
     private bool shift = false;
     private bool ctrl = false;
+
+    private string activateText = "Activate";
+    private string deactivateText = "Deactivate";
+    private string currentText;
+
     private struct PointWithOrientation
     {
         public Vector3 position;
@@ -75,7 +79,6 @@ public class Placer : EditorWindow
         so = new SerializedObject(this);
         propRadius = so.FindProperty(nameof(radius));
         propSpawnCount = so.FindProperty(nameof(spawnCount));
-        propOn = so.FindProperty(nameof(on));
         propPrefab = so.FindProperty(nameof(prefab));
         propRandomRotation = so.FindProperty(nameof(randomRotation));
         propPreviewMaterial = so.FindProperty(nameof(previewMaterial));
@@ -83,10 +86,10 @@ public class Placer : EditorWindow
         propOffset = so.FindProperty(nameof(offset));
         propKeepRootRotation = so.FindProperty(nameof(keepRootRotation));
         propMode = so.FindProperty(nameof(mode));
-
         SceneView.duringSceneGui += DuringSceneGUI;
         GenerateRandomPoints();
-        GetNewRandomValue();
+        RefreshRandEulerArray();
+        currentText = on ? deactivateText : activateText;
     }
 
     private void OnDisable()
@@ -97,9 +100,14 @@ public class Placer : EditorWindow
     private void OnGUI()
     {
         so.Update();
-        EditorGUILayout.PropertyField(propOn);
+        if (GUILayout.Button(currentText))
+        {
+            on = !on;
+            currentText = on ? deactivateText : activateText;
+        }
         if (on)
         {
+            GUILayout.Space(15);
             EditorGUILayout.PropertyField(propRadius);
             propRadius.floatValue = Mathf.Max(1f, propRadius.floatValue);
             EditorGUILayout.PropertyField(propSpawnCount);
@@ -125,8 +133,8 @@ public class Placer : EditorWindow
                 originalPrefab = PrefabUtility.GetCorrespondingObjectFromOriginalSource(prefab);
             }
             GenerateRandomPoints();
-            GetNewRandomValue();
             SceneView.RepaintAll();
+
         }
         if (Event.current.type == EventType.MouseDown && Event.current.button == 0) //左クリックでUNFOCUS
         {
@@ -162,10 +170,7 @@ public class Placer : EditorWindow
                 DeleteModeInputCheck();
                 break;
             default:
-                if (Event.current.type == EventType.MouseMove || Event.current.type == EventType.MouseDrag || Event.current.type == EventType.ScrollWheel) //timing to update random data
-                {
-                    OccupyPoseList(pointList);
-                }
+                OccupyPoseList(pointList);
                 NonDeleteModeInputCheck();
                 break;
         }
@@ -241,6 +246,30 @@ public class Placer : EditorWindow
         }
     }
 
+    private void RefreshRandEulerArray()
+    {
+        for (int i = 0; i < randEulerArray.Length; i++)
+        {
+            float angle = Random.value * 360f;
+            randEulerArray[i] = angle;
+        }
+    }
+
+    private float GetObjectBoundingBoxSize(GameObject o)
+    {
+        Renderer renderer = o.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            return renderer.bounds.size.y;
+        }
+        return 0f;
+    }
+
+    private float GetRandomEulerFromArray(int index)
+    {
+        return randEulerArray[index % randEulerArray.Length];
+    }
+
     private Color InverseColor(Color color)
     {
         return new Color(1 - color.r, 1 - color.g, 1 - color.b, color.a);
@@ -262,9 +291,8 @@ public class Placer : EditorWindow
     {
         if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.ScrollLock) //オンオフ切り替え
         {
-            so.Update();
-            propOn.boolValue = !propOn.boolValue;
-            so.ApplyModifiedPropertiesWithoutUndo();
+            on = !on;
+            currentText = on ? deactivateText : activateText;
             Repaint();
         }
     }
@@ -287,7 +315,7 @@ public class Placer : EditorWindow
         {
             Pose point;
             Quaternion rot = Quaternion.LookRotation(looksList[i].forward, looksList[i].up);
-            point.rotation = randomRotation ? Quaternion.AngleAxis(randArray[i] * 360f, looksList[i].up) * rot : rot;
+            point.rotation = randomRotation ? Quaternion.AngleAxis(GetRandomEulerFromArray(i), looksList[i].up) * rot : rot;
             point.position = looksList[i].position;
             poseList.Add(point);
         }
@@ -335,24 +363,47 @@ public class Placer : EditorWindow
             SnapObjects();
             Event.current.Use();
         }
-
     }
     private void DeleteAroundPoint()
     {
-        Collider[] colliders = Physics.OverlapSphere(hitPoint.position, radius);
-        foreach (Collider c in colliders)
+        bool hasCollider = (originalPrefab.GetComponent<Collider>() != null);
+        if (hasCollider)
         {
-            GameObject o = c.gameObject;
-
-            if (originalPrefab == PrefabUtility.GetCorrespondingObjectFromSource(o))
+            Collider[] colliders = Physics.OverlapSphere(hitPoint.position, radius);
+            foreach (Collider c in colliders)
             {
-                if (DistancePlanePoint(hitPoint.rotation * Vector3.up, hitPoint.position, o.transform.position) < deletionHeightBound) //height range to delete
+                GameObject o = c.gameObject;
+
+                if (originalPrefab == PrefabUtility.GetCorrespondingObjectFromSource(o))
+                {
+                    if (IsWithinDeletionHeightRange(o)) //height range to delete
+                    {
+                        Undo.DestroyObjectImmediate(o);
+                    }
+                }
+            }
+        }
+        else
+        {
+            GameObject[] objs = PrefabUtility.FindAllInstancesOfPrefab(originalPrefab);
+            foreach (GameObject o in objs)
+            {
+                float distance = Vector3.Distance(o.transform.position, hitPoint.position);
+                if (distance < radius && IsWithinDeletionHeightRange(o))
                 {
                     Undo.DestroyObjectImmediate(o);
                 }
             }
         }
+
     }
+
+    private bool IsWithinDeletionHeightRange(GameObject o)
+    {
+        float deletionHeightBound = 2f * GetObjectBoundingBoxSize(originalPrefab);
+        return DistancePlanePoint(hitPoint.rotation * Vector3.up, hitPoint.position, o.transform.position) < deletionHeightBound;
+    }
+
     private void DrawObjectPreview(GameObject go, bool isSnappedMode)
     {
         if (isSnappedMode)
@@ -418,7 +469,10 @@ public class Placer : EditorWindow
         if (mode == Mode.Scatter)
         {
             GenerateRandomPoints();
-            GetNewRandomValue();
+        }
+        if (randomRotation)
+        {
+            RefreshRandEulerArray();
         }
     }
     private void GenerateRandomPoints()
@@ -430,22 +484,6 @@ public class Placer : EditorWindow
         }
     }
 
-    private void GetNewRandomValue()
-    {
-        Shuffle(randArray);
-    }
-    public static void Shuffle<T>(T[] array)
-    {
-        int n = array.Length;
-        while (n > 1)
-        {
-            int k = Random.Range(0, n);
-            n--;
-            T temp = array[n];
-            array[n] = array[k];
-            array[k] = temp;
-        }
-    }
     private void DrawDisc(RaycastHit hit, Color color, float thickness)
     {
         Handles.color = color;
