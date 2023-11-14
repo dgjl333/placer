@@ -37,21 +37,23 @@ public class Placer : EditorWindow
     SerializedProperty propMode;
 
 
+    [SerializeField] private GameObject originalPrefab;
     private Pose hitPoint;
-    private GameObject originalPrefab;
     private float[] randEulerArray = new float[20];
     private List<Pose> poseList = new List<Pose>();
     private Vector2[] randPoints;
     private float raycastOffset = 1.5f;
-    private static int maxSpawnCount = 100;
     private bool showPreviewSetting = false;
     private float discThickness = 2f;
     private bool shift = false;
     private bool ctrl = false;
+    private bool alt = false;
 
     private string activateText = "Activate";
     private string deactivateText = "Deactivate";
     private string currentText;
+
+    private static int controlID;
 
     private struct PointWithOrientation
     {
@@ -90,6 +92,7 @@ public class Placer : EditorWindow
         GenerateRandomPoints();
         RefreshRandEulerArray();
         currentText = on ? deactivateText : activateText;
+        controlID = GUIUtility.GetControlID(FocusType.Passive);
     }
 
     private void OnDisable()
@@ -100,20 +103,38 @@ public class Placer : EditorWindow
     private void OnGUI()
     {
         so.Update();
-        if (GUILayout.Button(currentText))
+        GUILayout.Space(10);
+        GUILayout.BeginHorizontal();
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button(currentText, GUILayout.MaxWidth(230), GUILayout.Height(24)))
         {
             on = !on;
             currentText = on ? deactivateText : activateText;
         }
+        GUILayout.FlexibleSpace();
+        GUILayout.EndHorizontal();
         if (on)
         {
             GUILayout.Space(15);
-            EditorGUILayout.PropertyField(propRadius);
-            propRadius.floatValue = Mathf.Max(1f, propRadius.floatValue);
-            EditorGUILayout.PropertyField(propSpawnCount);
-            propSpawnCount.intValue = Mathf.Clamp(propSpawnCount.intValue, 1, maxSpawnCount);
+            EditorGUI.BeginChangeCheck();
+            float newRadius = EditorGUILayout.Slider("Radius", propRadius.floatValue, 0f, 100f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                propRadius.floatValue = newRadius;
+            }
+            EditorGUI.BeginChangeCheck();
+            int newSpawnCount = EditorGUILayout.IntSlider("Spawn Count", propSpawnCount.intValue, 1, 50);
+            if (EditorGUI.EndChangeCheck())
+            {
+                propSpawnCount.intValue = newSpawnCount;
+            }
+            EditorGUI.BeginChangeCheck();
+            float newOffset = EditorGUILayout.Slider("Height Offset", propOffset.floatValue, -5f, 5f);
+            if (EditorGUI.EndChangeCheck())
+            {
+                propOffset.floatValue = newOffset;
+            }
             EditorGUILayout.PropertyField(propPrefab);
-            EditorGUILayout.PropertyField(propOffset);
             EditorGUILayout.PropertyField(propRandomRotation);
             EditorGUILayout.PropertyField(propKeepRootRotation);
             EditorGUILayout.PropertyField(propMode);
@@ -148,17 +169,14 @@ public class Placer : EditorWindow
         if (!on) return;
         Handles.zTest = CompareFunction.LessEqual;
         List<PointWithOrientation> pointList = new List<PointWithOrientation>();
-        Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
         if (Event.current.type == EventType.MouseMove)
         {
             scene.Repaint();
         }
-        if (Physics.Raycast(ray, out RaycastHit hit))
-        {
-            HandleModeSpecificActions(hit, pointList, scene.camera);
-        }
 
         KeyModifierCheck();
+        RaycastToMousePosition(pointList, scene);
+        ScrollWheelCheck();
         if (ctrl)
         {
             DrawSnapObjectsPreview();
@@ -175,6 +193,99 @@ public class Placer : EditorWindow
                 break;
         }
     }
+
+    private void RaycastToMousePosition(List<PointWithOrientation> pointList, SceneView scene)
+    {
+        Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
+        if (Physics.Raycast(ray, out RaycastHit hit))
+        {
+            if (!ctrl) //non snap mode
+            {
+                switch (mode)
+                {
+                    case Mode.Delete:
+                        RaycastHit finalHit = hit;
+                        if (IsObjectFromPrefab(hit.collider.gameObject, originalPrefab))
+                        {
+                            RaycastHit[] hits = Physics.RaycastAll(ray, 100f);
+                            RaycastHit? finalHitNullable = GetValidHitExcludingSamePrefab(hits);
+                            finalHit = finalHitNullable ?? finalHit;
+                        }
+                        HandleModeSpecificActions(finalHit, pointList, scene.camera);
+                        break;
+                    default:
+                        HandleModeSpecificActions(hit, pointList, scene.camera);
+                        break;
+                }
+            }
+            else //exclude self
+            {
+                GameObject[] objs = Selection.gameObjects;
+                bool isSameObject = false;
+                RaycastHit finalHit = hit;
+                foreach (GameObject o in objs)
+                {
+                    if (IsSameObject(hit.collider.gameObject, o))
+                    {
+                        isSameObject = true;
+                        break;
+                    }
+                }
+                if (isSameObject)
+                {
+                    RaycastHit[] hits = Physics.RaycastAll(ray, 100f);
+                    RaycastHit? finalHitNullable = GetValidHitExcludingObjects(hits, objs);
+                    finalHit = finalHitNullable ?? finalHit;
+                }
+                HandleModeSpecificActions(finalHit, pointList, scene.camera);
+
+            }
+        }
+    }
+
+    private RaycastHit? GetValidHitExcludingObjects(RaycastHit[] hits, GameObject[] objs)
+    {
+        foreach (RaycastHit hit in hits)
+        {
+            bool isValid = true;
+            foreach (GameObject obj in objs)
+            {
+                if (IsSameObject(hit.collider.gameObject, obj))
+                {
+                    isValid = false;
+                    continue;
+                }
+            }
+            if (isValid)
+            {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    private RaycastHit? GetValidHitExcludingSamePrefab(RaycastHit[] hits)
+    {
+        foreach (RaycastHit hit in hits)
+        {
+            if (!IsObjectFromPrefab(hit.collider.gameObject, originalPrefab))
+            {
+                return hit;
+            }
+        }
+        return null;
+    }
+
+    private bool IsObjectFromPrefab(GameObject o, GameObject prefab)
+    {
+        return PrefabUtility.GetCorrespondingObjectFromOriginalSource(o) == prefab;
+    }
+
+    private bool IsSameObject(GameObject A, GameObject B)
+    {
+        return A.GetInstanceID() == B.GetInstanceID();
+    }
+
     private void HandleModeSpecificActions(RaycastHit hit, List<PointWithOrientation> pointList, Camera cam)
     {
         Vector3 hitNormal = hit.normal;
@@ -224,6 +335,8 @@ public class Placer : EditorWindow
     {
         shift = (Event.current.modifiers & EventModifiers.Shift) != 0;
         ctrl = (Event.current.modifiers & EventModifiers.Control) != 0;
+        alt = (Event.current.modifiers & EventModifiers.Alt) != 0;
+
     }
     private void DrawSnapObjectsPreview()
     {
@@ -347,21 +460,60 @@ public class Placer : EditorWindow
         if (Event.current.isMouse && Event.current.type == EventType.MouseDown)
         {
             SpawnPrefabs(poseList);
+            if (mode != Mode.None)
+            {
+                GUIUtility.hotControl = controlID;
+            }
             Event.current.Use();
         }
+        ReleaseHotControl();
     }
     private void SnapModeInputCheck()
     {
-        if (Event.current.type == EventType.ScrollWheel) //オフセット調整
-        {
-            AdjustOffset();
-            Event.current.Use();
-            Repaint();
-        }
         if (Event.current.isMouse && Event.current.type == EventType.MouseDown && Event.current.button == 0) //leftクリック
         {
             SnapObjects();
+            GUIUtility.hotControl = controlID;
             Event.current.Use();
+        }
+        ReleaseHotControl();
+    }
+
+    private void ScrollWheelCheck()
+    {
+        if (Event.current.type == EventType.ScrollWheel) //オフセット調整
+        {
+            if (shift)
+            {
+                AdjustOffset();
+                UseEvent();
+            }
+            if (alt)
+            {
+                AdjustRadius();
+                UseEvent();
+            }
+
+        }
+        void UseEvent()
+        {
+            Event.current.Use();
+            Repaint();
+        }
+    }
+
+    private void AdjustRadius()
+    {
+        float scrollDir = Mathf.Sign(Event.current.delta.y);
+        so.Update();
+        propRadius.floatValue *= 1 + scrollDir * 0.05f;
+        so.ApplyModifiedPropertiesWithoutUndo();
+    }
+    private void ReleaseHotControl()
+    {
+        if (GUIUtility.hotControl == controlID && Event.current.type == EventType.MouseUp)
+        {
+            GUIUtility.hotControl = 0;
         }
     }
     private void DeleteAroundPoint()

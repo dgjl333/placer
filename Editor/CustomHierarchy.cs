@@ -1,9 +1,10 @@
-﻿using UnityEditor;
+using UnityEditor;
 using UnityEngine;
 
 [InitializeOnLoad]
-public class CustomHierarchy : MonoBehaviour
+public class CustomHierarchy
 {
+
     private static float size = 14f;
     private static float startPos = 32f;
 
