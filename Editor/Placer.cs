@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -21,9 +22,9 @@ public class Placer : EditorWindow
     public bool keepRootRotation = false;
     public Mode mode = Mode.Place;
 
-
     public GameObject prefab = null;
     public Material previewMaterial;
+    public Material deletionMaterial;
 
     SerializedObject so;
     SerializedProperty propRadius;
@@ -32,17 +33,18 @@ public class Placer : EditorWindow
     SerializedProperty propOffset;
     SerializedProperty propRandomRotation;
     SerializedProperty propPreviewMaterial;
+    SerializedProperty propDeletionMaterial;
     SerializedProperty propColor;
     SerializedProperty propKeepRootRotation;
     SerializedProperty propMode;
 
 
     [SerializeField] private GameObject originalPrefab;
+    [SerializeField] private float objectHeightBound = 2f;
     private Pose hitPoint;
     private float[] randEulerArray = new float[20];
     private List<Pose> poseList = new List<Pose>();
     private Vector2[] randPoints;
-    private float raycastOffset = 1.5f;
     private bool showPreviewSetting = false;
     private float discThickness = 2f;
     private bool shift = false;
@@ -53,7 +55,13 @@ public class Placer : EditorWindow
     private string deactivateText = "Deactivate";
     private string currentText;
 
-    private static int controlID;
+    private int controlID;
+
+    private readonly float minRadius = 0f;
+    private readonly float maxRadius = 100f;
+    private readonly float minOffset = -5f;
+    private readonly float maxOffset = 5f;
+
 
     private struct PointWithOrientation
     {
@@ -84,6 +92,7 @@ public class Placer : EditorWindow
         propPrefab = so.FindProperty(nameof(prefab));
         propRandomRotation = so.FindProperty(nameof(randomRotation));
         propPreviewMaterial = so.FindProperty(nameof(previewMaterial));
+        propDeletionMaterial = so.FindProperty(nameof(deletionMaterial));
         propColor = so.FindProperty(nameof(radiusColor));
         propOffset = so.FindProperty(nameof(offset));
         propKeepRootRotation = so.FindProperty(nameof(keepRootRotation));
@@ -117,7 +126,7 @@ public class Placer : EditorWindow
         {
             GUILayout.Space(15);
             EditorGUI.BeginChangeCheck();
-            float newRadius = EditorGUILayout.Slider("Radius", propRadius.floatValue, 0f, 100f);
+            float newRadius = EditorGUILayout.Slider("Radius", propRadius.floatValue, minRadius, maxRadius);
             if (EditorGUI.EndChangeCheck())
             {
                 propRadius.floatValue = newRadius;
@@ -129,20 +138,25 @@ public class Placer : EditorWindow
                 propSpawnCount.intValue = newSpawnCount;
             }
             EditorGUI.BeginChangeCheck();
-            float newOffset = EditorGUILayout.Slider("Height Offset", propOffset.floatValue, -5f, 5f);
+            float newOffset = EditorGUILayout.Slider("Height Offset", propOffset.floatValue, minOffset, maxOffset);
             if (EditorGUI.EndChangeCheck())
             {
                 propOffset.floatValue = newOffset;
             }
             EditorGUILayout.PropertyField(propPrefab);
-            EditorGUILayout.PropertyField(propRandomRotation);
-            EditorGUILayout.PropertyField(propKeepRootRotation);
+            GUILayout.Space(15);
             EditorGUILayout.PropertyField(propMode);
+            if (mode==Mode.Scatter || mode == Mode.Place)
+            {
+                EditorGUILayout.PropertyField(propRandomRotation);
+                EditorGUILayout.PropertyField(propKeepRootRotation);
+            }
             GUILayout.Space(20);
             showPreviewSetting = EditorGUILayout.Foldout(showPreviewSetting, "Preview Setting");
             if (showPreviewSetting)
             {
                 EditorGUILayout.PropertyField(propPreviewMaterial);
+                EditorGUILayout.PropertyField(propDeletionMaterial);
                 EditorGUILayout.PropertyField(propColor);
             }
         }
@@ -152,6 +166,11 @@ public class Placer : EditorWindow
             if (prefab != null)
             {
                 originalPrefab = PrefabUtility.GetCorrespondingObjectFromOriginalSource(prefab);
+                objectHeightBound = GetObjectBoundingBoxSize(originalPrefab);
+            }
+            else
+            {
+                originalPrefab = null;
             }
             GenerateRandomPoints();
             SceneView.RepaintAll();
@@ -163,10 +182,12 @@ public class Placer : EditorWindow
             Repaint();
         }
     }
+
     private void DuringSceneGUI(SceneView scene)
     {
+        bool isInPrefabMode = (PrefabStageUtility.GetCurrentPrefabStage() != null);
         CheckInputToggleActive();
-        if (!on) return;
+        if (!on || isInPrefabMode) return;
         Handles.zTest = CompareFunction.LessEqual;
         List<PointWithOrientation> pointList = new List<PointWithOrientation>();
         if (Event.current.type == EventType.MouseMove)
@@ -185,11 +206,18 @@ public class Placer : EditorWindow
         switch (mode)
         {
             case Mode.Delete:
+                if (ctrl || originalPrefab == null) return;
                 DeleteModeInputCheck();
+                List<GameObject> objsInDeletionRange = GetObjectsInDeletionRange();
+                DrawDeletionPreviews(objsInDeletionRange);
                 break;
             default:
                 OccupyPoseList(pointList);
                 NonDeleteModeInputCheck();
+                if (originalPrefab != null && !ctrl)
+                {
+                    DrawObjectPreview(originalPrefab, false);
+                }
                 break;
         }
     }
@@ -207,7 +235,7 @@ public class Placer : EditorWindow
                         RaycastHit finalHit = hit;
                         if (IsObjectFromPrefab(hit.collider.gameObject, originalPrefab))
                         {
-                            RaycastHit[] hits = Physics.RaycastAll(ray, 100f);
+                            RaycastHit[] hits = Physics.RaycastAll(ray);
                             RaycastHit? finalHitNullable = GetValidHitExcludingSamePrefab(hits);
                             finalHit = finalHitNullable ?? finalHit;
                         }
@@ -233,7 +261,7 @@ public class Placer : EditorWindow
                 }
                 if (isSameObject)
                 {
-                    RaycastHit[] hits = Physics.RaycastAll(ray, 100f);
+                    RaycastHit[] hits = Physics.RaycastAll(ray);
                     RaycastHit? finalHitNullable = GetValidHitExcludingObjects(hits, objs);
                     finalHit = finalHitNullable ?? finalHit;
                 }
@@ -276,16 +304,6 @@ public class Placer : EditorWindow
         return null;
     }
 
-    private bool IsObjectFromPrefab(GameObject o, GameObject prefab)
-    {
-        return PrefabUtility.GetCorrespondingObjectFromOriginalSource(o) == prefab;
-    }
-
-    private bool IsSameObject(GameObject A, GameObject B)
-    {
-        return A.GetInstanceID() == B.GetInstanceID();
-    }
-
     private void HandleModeSpecificActions(RaycastHit hit, List<PointWithOrientation> pointList, Camera cam)
     {
         Vector3 hitNormal = hit.normal;
@@ -293,11 +311,12 @@ public class Placer : EditorWindow
         Vector3 hitBitangent = Vector3.Cross(hitNormal, hitTangent);
         hitPoint.position = hit.point;
         hitPoint.rotation = Quaternion.LookRotation(hitTangent, hitNormal);
+        if (ctrl || originalPrefab == null) return;
         switch (mode)
         {
             case Mode.Delete:
                 {
-                    DrawDisc(hit, InverseColor(radiusColor), discThickness * 2f);
+                    DrawDisc(hit, GetInverseColor(radiusColor), discThickness);
                     PointWithOrientation pointInfo = new PointWithOrientation(hit.point, hitTangent, hitNormal);
                     pointList.Add(pointInfo);
                     break;
@@ -307,9 +326,9 @@ public class Placer : EditorWindow
                     DrawDisc(hit, radiusColor, discThickness);
                     foreach (Vector2 p in randPoints)
                     {
-                        Vector3 worldPos = GetWorldPosFromLocal(p, hit.point, hitTangent, hitNormal, hitBitangent, raycastOffset);
+                        Vector3 worldPos = GetWorldPosFromLocal(p, hit.point, hitTangent, hitNormal, hitBitangent);
                         Ray pointRay = new Ray(worldPos, -hitNormal);
-                        if (Physics.Raycast(pointRay, out RaycastHit pointHit))
+                        if (Physics.Raycast(pointRay, out RaycastHit pointHit, objectHeightBound))
                         {
                             Vector3 forward = Vector3.Cross(pointHit.normal, cam.transform.up).normalized;
                             Vector3 up = pointHit.normal;
@@ -323,7 +342,7 @@ public class Placer : EditorWindow
                 {
                     PointWithOrientation pointInfo = new PointWithOrientation(hit.point, hitTangent, hitNormal);
                     pointList.Add(pointInfo);
-                    float scale = Vector3.Distance(cam.transform.position, hit.point) * 0.05f;
+                    float scale = HandleUtility.GetHandleSize(hit.point) * 0.35f;
                     DrawAxisGizmo(hit.point, hitTangent, hitNormal, hitBitangent, scale);
                 }
                 break;
@@ -331,13 +350,7 @@ public class Placer : EditorWindow
                 break;
         }
     }
-    private void KeyModifierCheck()
-    {
-        shift = (Event.current.modifiers & EventModifiers.Shift) != 0;
-        ctrl = (Event.current.modifiers & EventModifiers.Control) != 0;
-        alt = (Event.current.modifiers & EventModifiers.Alt) != 0;
 
-    }
     private void DrawSnapObjectsPreview()
     {
         foreach (GameObject go in Selection.gameObjects)
@@ -353,53 +366,16 @@ public class Placer : EditorWindow
         {
             if (originalPrefab != null)
             {
-                DeleteAroundPoint();
+                List<GameObject> deletingObjs = GetObjectsInDeletionRange();
+                foreach (GameObject o in deletingObjs)
+                {
+                    Undo.DestroyObjectImmediate(o);
+                }
                 Event.current.Use();
             }
         }
     }
 
-    private void RefreshRandEulerArray()
-    {
-        for (int i = 0; i < randEulerArray.Length; i++)
-        {
-            float angle = Random.value * 360f;
-            randEulerArray[i] = angle;
-        }
-    }
-
-    private float GetObjectBoundingBoxSize(GameObject o)
-    {
-        Renderer renderer = o.GetComponent<Renderer>();
-        if (renderer != null)
-        {
-            return renderer.bounds.size.y;
-        }
-        return 0f;
-    }
-
-    private float GetRandomEulerFromArray(int index)
-    {
-        return randEulerArray[index % randEulerArray.Length];
-    }
-
-    private Color InverseColor(Color color)
-    {
-        return new Color(1 - color.r, 1 - color.g, 1 - color.b, color.a);
-    }
-    private void NonDeleteModeInputCheck()
-    {
-
-        if (originalPrefab != null && !ctrl)
-        {
-            DrawObjectPreview(originalPrefab, false);
-        }
-        if (shift) //スナッププレビュー
-        {
-            CheckInputShiftDown();
-
-        }
-    }
     private void CheckInputToggleActive()
     {
         if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.ScrollLock) //オンオフ切り替え
@@ -410,49 +386,21 @@ public class Placer : EditorWindow
         }
     }
 
-    private Vector3 GetWorldPosFromLocal(Vector2 Localposition, Vector3 origin, Vector3 forward, Vector3 up, Vector3 right, float yAxisOffset)
+    private void KeyModifierCheck()
     {
-        Matrix4x4 loccalToWorldMatrix = new Matrix4x4(
-        new Vector4(forward.x, forward.y, forward.z, 0),
-        new Vector4(up.x, up.y, up.z, 0),
-        new Vector4(right.x, right.y, right.z, 0),
-        new Vector4(origin.x, origin.y, origin.z, 1)
-    );
-        Vector3 pointLocal = new Vector3(Localposition.x, yAxisOffset, Localposition.y) * radius;
-        return loccalToWorldMatrix.MultiplyPoint3x4(pointLocal);
-    }
-    private void OccupyPoseList(List<PointWithOrientation> looksList)
-    {
-        poseList.Clear();
-        for (int i = 0; i < looksList.Count; i++)
-        {
-            Pose point;
-            Quaternion rot = Quaternion.LookRotation(looksList[i].forward, looksList[i].up);
-            point.rotation = randomRotation ? Quaternion.AngleAxis(GetRandomEulerFromArray(i), looksList[i].up) * rot : rot;
-            point.position = looksList[i].position;
-            poseList.Add(point);
-        }
-    }
-    private void DrawAxisGizmo(Vector3 position, Vector3 forward, Vector3 up, Vector3 right, float scale)
-    {
-        Handles.color = Color.red;
-        Handles.DrawAAPolyLine(5, position, position + forward * scale);
-        Handles.color = Color.blue;
-        Handles.DrawAAPolyLine(5, position, position + right * scale);
-        Handles.color = Color.green;
-        Handles.DrawAAPolyLine(5, position, position + up * scale);
+        shift = (Event.current.modifiers & EventModifiers.Shift) != 0;
+        ctrl = (Event.current.modifiers & EventModifiers.Control) != 0;
+        alt = (Event.current.modifiers & EventModifiers.Alt) != 0;
     }
 
-    private void AdjustOffset()
+    private void NonDeleteModeInputCheck()
     {
-        float scrollDir = Mathf.Sign(Event.current.delta.y);
-        so.Update();
-        propOffset.floatValue -= scrollDir * 0.1f;
-        so.ApplyModifiedPropertiesWithoutUndo();
-    }
-    private bool IsPrefab(GameObject o)
-    {
-        return o.scene.name == null;
+
+        if (shift) //スナッププレビュー
+        {
+            CheckInputShiftDown();
+
+        }
     }
 
     private void CheckInputShiftDown()
@@ -468,6 +416,7 @@ public class Placer : EditorWindow
         }
         ReleaseHotControl();
     }
+
     private void SnapModeInputCheck()
     {
         if (Event.current.isMouse && Event.current.type == EventType.MouseDown && Event.current.button == 0) //leftクリック
@@ -502,58 +451,77 @@ public class Placer : EditorWindow
         }
     }
 
+    private void AdjustOffset()
+    {
+        float scrollDir = Mathf.Sign(Event.current.delta.y);
+        so.Update();
+        float newValue = Mathf.Clamp(propOffset.floatValue - scrollDir * 0.1f, minOffset, maxOffset);
+        propOffset.floatValue = newValue;
+        so.ApplyModifiedPropertiesWithoutUndo();
+    }
     private void AdjustRadius()
     {
         float scrollDir = Mathf.Sign(Event.current.delta.y);
         so.Update();
-        propRadius.floatValue *= 1 + scrollDir * 0.05f;
+        float newValue = Mathf.Clamp(propRadius.floatValue * (1 - scrollDir * 0.04f), minRadius, maxRadius);
+        propRadius.floatValue = newValue;
         so.ApplyModifiedPropertiesWithoutUndo();
     }
+
+    private float GetObjectBoundingBoxSize(GameObject o)
+    {
+        Renderer renderer = o.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            return renderer.bounds.size.y;
+        }
+        return 0f;
+    }
+
+    private float GetRandomEulerFromArray(int index)
+    {
+        return randEulerArray[index % randEulerArray.Length];
+    }
+
+    private Vector3 GetWorldPosFromLocal(Vector2 Localposition, Vector3 origin, Vector3 forward, Vector3 up, Vector3 right)
+    {
+        Matrix4x4 loccalToWorldMatrix = new Matrix4x4(
+        new Vector4(forward.x, forward.y, forward.z, 0),
+        new Vector4(up.x, up.y, up.z, 0),
+        new Vector4(right.x, right.y, right.z, 0),
+        new Vector4(origin.x, origin.y, origin.z, 1)
+    );
+        Vector3 pointLocal = new Vector3(Localposition.x, 0.2f, Localposition.y) * radius; // a little above surface
+        return loccalToWorldMatrix.MultiplyPoint3x4(pointLocal);
+    }
+    private void OccupyPoseList(List<PointWithOrientation> looksList)
+    {
+        poseList.Clear();
+        for (int i = 0; i < looksList.Count; i++)
+        {
+            Pose point;
+            Quaternion rot = Quaternion.LookRotation(looksList[i].forward, looksList[i].up);
+            point.rotation = randomRotation ? Quaternion.AngleAxis(GetRandomEulerFromArray(i), looksList[i].up) * rot : rot;
+            point.position = looksList[i].position;
+            poseList.Add(point);
+        }
+    }
+    private void DrawAxisGizmo(Vector3 position, Vector3 forward, Vector3 up, Vector3 right, float scale)
+    {
+        Handles.color = Color.red;
+        Handles.DrawAAPolyLine(5, position, position + forward * scale);
+        Handles.color = Color.blue;
+        Handles.DrawAAPolyLine(5, position, position + right * scale);
+        Handles.color = Color.green;
+        Handles.DrawAAPolyLine(5, position, position + up * scale);
+    }
+
     private void ReleaseHotControl()
     {
         if (GUIUtility.hotControl == controlID && Event.current.type == EventType.MouseUp)
         {
             GUIUtility.hotControl = 0;
         }
-    }
-    private void DeleteAroundPoint()
-    {
-        bool hasCollider = (originalPrefab.GetComponent<Collider>() != null);
-        if (hasCollider)
-        {
-            Collider[] colliders = Physics.OverlapSphere(hitPoint.position, radius);
-            foreach (Collider c in colliders)
-            {
-                GameObject o = c.gameObject;
-
-                if (originalPrefab == PrefabUtility.GetCorrespondingObjectFromSource(o))
-                {
-                    if (IsWithinDeletionHeightRange(o)) //height range to delete
-                    {
-                        Undo.DestroyObjectImmediate(o);
-                    }
-                }
-            }
-        }
-        else
-        {
-            GameObject[] objs = PrefabUtility.FindAllInstancesOfPrefab(originalPrefab);
-            foreach (GameObject o in objs)
-            {
-                float distance = Vector3.Distance(o.transform.position, hitPoint.position);
-                if (distance < radius && IsWithinDeletionHeightRange(o))
-                {
-                    Undo.DestroyObjectImmediate(o);
-                }
-            }
-        }
-
-    }
-
-    private bool IsWithinDeletionHeightRange(GameObject o)
-    {
-        float deletionHeightBound = 2f * GetObjectBoundingBoxSize(originalPrefab);
-        return DistancePlanePoint(hitPoint.rotation * Vector3.up, hitPoint.position, o.transform.position) < deletionHeightBound;
     }
 
     private void DrawObjectPreview(GameObject go, bool isSnappedMode)
@@ -571,20 +539,70 @@ public class Placer : EditorWindow
                 DrawMesh(go, localToWorld, !keepRootRotation);
             }
         }
-
     }
 
-    private void DrawMesh(GameObject go, Matrix4x4 localToWorld, bool ignoreParentRotation)
+    private List<GameObject> GetObjectsInDeletionRange()
     {
+        List<GameObject> objsList = new List<GameObject>();
+        bool hasCollider = (originalPrefab.GetComponent<Collider>() != null);
+        if (hasCollider)
+        {
+            Collider[] colliders = Physics.OverlapSphere(hitPoint.position, radius);
+            foreach (Collider c in colliders)
+            {
+                GameObject o = c.gameObject;
+                if (originalPrefab == PrefabUtility.GetCorrespondingObjectFromSource(o))
+                {
+                    if (IsWithinDeletionHeightRange(o)) //height range 
+                    {
+                        objsList.Add(o);
+                    }
+                }
+            }
+            return objsList;
+        }
+        else
+        {
+            GameObject[] objs = PrefabUtility.FindAllInstancesOfPrefab(originalPrefab);
+            foreach (GameObject o in objs)
+            {
+                float distance = Vector3.Distance(o.transform.position, hitPoint.position);
+                if (distance < radius && IsWithinDeletionHeightRange(o))
+                {
+                    objsList.Add(o);
 
-        MeshFilter[] filters = go.GetComponentsInChildren<MeshFilter>();
+                }
+            }
+            return objsList;
+        }
+    }
+
+    private void DrawDeletionPreviews(List<GameObject> objs)
+    {
+        if (deletionMaterial == null) return;
+        deletionMaterial.SetPass(0);
+        foreach (GameObject o in objs)
+        {
+            MeshFilter[] filters = o.GetComponentsInChildren<MeshFilter>();
+            foreach (MeshFilter filter in filters)
+            {
+                Mesh mesh = filter.sharedMesh;
+                Graphics.DrawMeshNow(mesh, filter.transform.localToWorldMatrix);
+            }
+        }
+    }
+
+    private void DrawMesh(GameObject o, Matrix4x4 localToWorld, bool ignoreParentRotation)
+    {
+        if (previewMaterial == null) return;
         previewMaterial.SetPass(0);
+        MeshFilter[] filters = o.GetComponentsInChildren<MeshFilter>();
         Matrix4x4 yAxisOffsetMatrix = Matrix4x4.TRS(new Vector3(0f, offset, 0f), Quaternion.identity, Vector3.one);
-        Matrix4x4 ignoreParentPositionMatrix = Matrix4x4.TRS(-go.transform.position, Quaternion.identity, Vector3.one);
+        Matrix4x4 ignoreParentPositionMatrix = Matrix4x4.TRS(-o.transform.position, Quaternion.identity, Vector3.one);
         Matrix4x4 ignoreParentMatrix = ignoreParentPositionMatrix;
         if (ignoreParentRotation)
         {
-            Matrix4x4 ignoreParentRotationMatrix = Matrix4x4.TRS(Vector3.zero, Quaternion.Inverse(go.transform.rotation), Vector3.one);
+            Matrix4x4 ignoreParentRotationMatrix = Matrix4x4.TRS(Vector3.zero, Quaternion.Inverse(o.transform.rotation), Vector3.one);
             ignoreParentMatrix = ignoreParentRotationMatrix * ignoreParentMatrix;
         }
         foreach (MeshFilter filter in filters)
@@ -596,6 +614,14 @@ public class Placer : EditorWindow
         }
     }
 
+    private void RefreshRandEulerArray()
+    {
+        for (int i = 0; i < randEulerArray.Length; i++)
+        {
+            float angle = Random.value * 360f;
+            randEulerArray[i] = angle;
+        }
+    }
     private void SnapObjects()
     {
         if (Selection.gameObjects.Length == 0) return;
@@ -604,7 +630,6 @@ public class Placer : EditorWindow
             Undo.RecordObject(Selection.gameObjects[i].transform, "Snap");
             Selection.gameObjects[i].transform.position = hitPoint.position + hitPoint.rotation * new Vector3(0f, offset, 0f);
             Selection.gameObjects[i].transform.rotation = hitPoint.rotation;
-
         }
     }
     private void SpawnPrefabs(List<Pose> poseList)
@@ -616,7 +641,6 @@ public class Placer : EditorWindow
             Undo.RegisterCreatedObjectUndo(spawnObject, "Spawn Objects");
             spawnObject.transform.position = point.position + point.rotation * new Vector3(0f, offset, 0f);
             spawnObject.transform.rotation = keepRootRotation ? point.rotation * originalPrefab.transform.rotation : point.rotation;
-
         }
         if (mode == Mode.Scatter)
         {
@@ -643,8 +667,34 @@ public class Placer : EditorWindow
         Handles.color = Color.white;
     }
 
-    public static float DistancePlanePoint(Vector3 planeNormal, Vector3 planePoint, Vector3 point)
+    private bool IsWithinDeletionHeightRange(GameObject o)
+    {
+        float range = 2f * objectHeightBound;
+        return DistancePlanePoint(hitPoint.rotation * Vector3.up, hitPoint.position, o.transform.position) < range;
+    }
+
+    private bool IsObjectFromPrefab(GameObject o, GameObject prefab)
+    {
+        return PrefabUtility.GetCorrespondingObjectFromOriginalSource(o) == prefab;
+    }
+
+    private bool IsSameObject(GameObject A, GameObject B)
+    {
+        return A.GetInstanceID() == B.GetInstanceID();
+    }
+
+    private float DistancePlanePoint(Vector3 planeNormal, Vector3 planePoint, Vector3 point)
     {
         return Mathf.Abs(Vector3.Dot(planeNormal, (point - planePoint)));
+    }
+
+    private Color GetInverseColor(Color color)
+    {
+        return new Color(1 - color.r, 1 - color.g, 1 - color.b, color.a);
+    }
+
+    private bool IsPrefab(GameObject o)
+    {
+        return o.scene.name == null;
     }
 }
