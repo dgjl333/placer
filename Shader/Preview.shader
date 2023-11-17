@@ -12,7 +12,7 @@
         }
 
         Blend SrcAlpha OneMinusSrcAlpha
-
+        ZTest Always
 
         Pass
         {
@@ -42,7 +42,7 @@
                 v2f o;
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 o.normal = UnityObjectToWorldNormal(v.normal);
-                o.viewDir=normalize(WorldSpaceViewDir(v.vertex));
+                o.viewDir= normalize(WorldSpaceViewDir(v.vertex));
                 return o;
             }
 

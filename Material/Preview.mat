@@ -8,7 +8,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: Preview
-  m_Shader: {fileID: 4800000, guid: c2c3739423ffa8c45abb6a30d3d6bb39, type: 3}
+  m_Shader: {fileID: 4800000, guid: c9166610662796e4287b04a7b0e44884, type: 3}
   m_ValidKeywords: []
   m_InvalidKeywords: []
   m_LightmapFlags: 4
@@ -61,6 +61,8 @@ Material:
     - _Alpha: 0.2
     - _BumpScale: 1
     - _Cutoff: 0.5
+    - _DepthDist: 0
+    - _DepthFactor: 1
     - _DetailNormalMapScale: 1
     - _DstBlend: 0
     - _GlossMapScale: 1
@@ -77,5 +79,7 @@ Material:
     - _ZWrite: 1
     m_Colors:
     - _Color: {r: 0.745283, g: 0.745283, b: 0.745283, a: 0.5882353}
+    - _Color1: {r: 0.6415094, g: 0.6415094, b: 0.6415094, a: 0.7058824}
+    - _Color2: {r: 0.3773585, g: 0.3773585, b: 0.3773585, a: 0.7058824}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
   m_BuildTextureStacks: []

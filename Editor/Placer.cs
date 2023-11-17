@@ -50,7 +50,6 @@ public class Placer : EditorWindow
     private bool shift = false;
     private bool ctrl = false;
     private bool alt = false;
-
     private string activateText = "Activate";
     private string deactivateText = "Deactivate";
     private string currentText;
@@ -185,6 +184,7 @@ public class Placer : EditorWindow
 
     private void DuringSceneGUI(SceneView scene)
     {
+
         bool isInPrefabMode = (PrefabStageUtility.GetCurrentPrefabStage() != null);
         CheckInputToggleActive();
         if (!on || isInPrefabMode) return;
@@ -430,16 +430,17 @@ public class Placer : EditorWindow
 
     private void ScrollWheelCheck()
     {
+
         if (Event.current.type == EventType.ScrollWheel) //オフセット調整
         {
-            if (shift)
+            if (shift && mode!=Mode.None)
             {
-                AdjustOffset();
+                AdjustRadius();
                 UseEvent();
             }
             if (alt)
             {
-                AdjustRadius();
+                AdjustOffset();
                 UseEvent();
             }
 
