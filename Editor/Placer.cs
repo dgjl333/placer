@@ -3,6 +3,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
+using System.Linq;
 
 public class Placer : EditorWindow
 
@@ -85,6 +86,7 @@ public class Placer : EditorWindow
     }
     private void OnEnable()
     {
+        Camera.main.depthTextureMode = DepthTextureMode.Depth;   //intersection shader need depth texture
         so = new SerializedObject(this);
         propRadius = so.FindProperty(nameof(radius));
         propSpawnCount = so.FindProperty(nameof(spawnCount));
@@ -184,7 +186,6 @@ public class Placer : EditorWindow
 
     private void DuringSceneGUI(SceneView scene)
     {
-
         bool isInPrefabMode = (PrefabStageUtility.GetCurrentPrefabStage() != null);
         CheckInputToggleActive();
         if (!on || isInPrefabMode) return;
@@ -196,7 +197,7 @@ public class Placer : EditorWindow
         }
 
         KeyModifierCheck();
-        RaycastToMousePosition(pointList, scene);
+        RaycastToMousePosition(pointList, scene.camera);
         ScrollWheelCheck();
         if (ctrl)
         {
@@ -222,51 +223,41 @@ public class Placer : EditorWindow
         }
     }
 
-    private void RaycastToMousePosition(List<PointWithOrientation> pointList, SceneView scene)
+    private void RaycastToMousePosition(List<PointWithOrientation> pointList, Camera cam)
     {
         Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
         if (Physics.Raycast(ray, out RaycastHit hit))
         {
+            RaycastHit finalHit = hit;
             if (!ctrl) //non snap mode
             {
                 switch (mode)
                 {
                     case Mode.Delete:
-                        RaycastHit finalHit = hit;
                         if (IsObjectFromPrefab(hit.collider.gameObject, originalPrefab))
                         {
                             RaycastHit[] hits = Physics.RaycastAll(ray);
                             RaycastHit? finalHitNullable = GetValidHitExcludingSamePrefab(hits);
                             finalHit = finalHitNullable ?? finalHit;
                         }
-                        HandleModeSpecificActions(finalHit, pointList, scene.camera);
+                        HandleModeSpecificActions(finalHit, pointList, cam);
                         break;
                     default:
-                        HandleModeSpecificActions(hit, pointList, scene.camera);
+                        HandleModeSpecificActions(finalHit, pointList, cam);
                         break;
                 }
             }
             else //exclude self
             {
                 GameObject[] objs = Selection.gameObjects;
-                bool isSameObject = false;
-                RaycastHit finalHit = hit;
-                foreach (GameObject o in objs)
-                {
-                    if (IsSameObject(hit.collider.gameObject, o))
-                    {
-                        isSameObject = true;
-                        break;
-                    }
-                }
-                if (isSameObject)
+                bool isFromObject = objs.Any(o => IsFromObject(hit.collider.gameObject, o));
+                if (isFromObject)
                 {
                     RaycastHit[] hits = Physics.RaycastAll(ray);
                     RaycastHit? finalHitNullable = GetValidHitExcludingObjects(hits, objs);
                     finalHit = finalHitNullable ?? finalHit;
                 }
-                HandleModeSpecificActions(finalHit, pointList, scene.camera);
-
+                HandleModeSpecificActions(finalHit, pointList, cam);
             }
         }
     }
@@ -278,7 +269,7 @@ public class Placer : EditorWindow
             bool isValid = true;
             foreach (GameObject obj in objs)
             {
-                if (IsSameObject(hit.collider.gameObject, obj))
+                if (IsFromObject(hit.collider.gameObject, obj))
                 {
                     isValid = false;
                     continue;
@@ -306,6 +297,7 @@ public class Placer : EditorWindow
 
     private void HandleModeSpecificActions(RaycastHit hit, List<PointWithOrientation> pointList, Camera cam)
     {
+
         Vector3 hitNormal = hit.normal;
         Vector3 hitTangent = Vector3.Cross(hitNormal, cam.transform.up).normalized;
         Vector3 hitBitangent = Vector3.Cross(hitNormal, hitTangent);
@@ -342,8 +334,7 @@ public class Placer : EditorWindow
                 {
                     PointWithOrientation pointInfo = new PointWithOrientation(hit.point, hitTangent, hitNormal);
                     pointList.Add(pointInfo);
-                    float scale = HandleUtility.GetHandleSize(hit.point) * 0.35f;
-                    DrawAxisGizmo(hit.point, hitTangent, hitNormal, hitBitangent, scale);
+                    //DrawAxisGizmo(hit.point, hitTangent, hitNormal, hitBitangent);
                 }
                 break;
             default:
@@ -361,7 +352,6 @@ public class Placer : EditorWindow
 
     private void DeleteModeInputCheck()
     {
-
         if (shift && Event.current.isMouse && Event.current.type == EventType.MouseDown)
         {
             if (originalPrefab != null)
@@ -395,11 +385,9 @@ public class Placer : EditorWindow
 
     private void NonDeleteModeInputCheck()
     {
-
         if (shift) //スナッププレビュー
         {
             CheckInputShiftDown();
-
         }
     }
 
@@ -433,8 +421,8 @@ public class Placer : EditorWindow
 
         if (Event.current.type == EventType.ScrollWheel) //オフセット調整
         {
-            if (shift && mode!=Mode.None)
-            {
+            if (shift && (mode == Mode.Scatter || mode == Mode.Delete))
+            {   
                 AdjustRadius();
                 UseEvent();
             }
@@ -507,8 +495,9 @@ public class Placer : EditorWindow
             poseList.Add(point);
         }
     }
-    private void DrawAxisGizmo(Vector3 position, Vector3 forward, Vector3 up, Vector3 right, float scale)
+    private void DrawAxisGizmo(Vector3 position, Vector3 forward, Vector3 up, Vector3 right)
     {
+        float scale = HandleUtility.GetHandleSize(position) * 0.35f;
         Handles.color = Color.red;
         Handles.DrawAAPolyLine(5, position, position + forward * scale);
         Handles.color = Color.blue;
@@ -676,12 +665,31 @@ public class Placer : EditorWindow
 
     private bool IsObjectFromPrefab(GameObject o, GameObject prefab)
     {
-        return PrefabUtility.GetCorrespondingObjectFromOriginalSource(o) == prefab;
+        GameObject rootObject = PrefabUtility.GetOutermostPrefabInstanceRoot(o);
+        if (rootObject == null)
+        {
+            return PrefabUtility.GetCorrespondingObjectFromOriginalSource(o) == prefab;
+        }
+        else
+        {
+            return PrefabUtility.GetCorrespondingObjectFromOriginalSource(rootObject) == prefab;
+
+        }
     }
 
-    private bool IsSameObject(GameObject A, GameObject B)
+    private bool IsFromObject(GameObject o, GameObject sourceObj)
     {
-        return A.GetInstanceID() == B.GetInstanceID();
+        GameObject rootObject = PrefabUtility.GetOutermostPrefabInstanceRoot(o);
+        if (rootObject == null)
+        {
+            return o.GetInstanceID() == sourceObj.GetInstanceID();
+        }
+        else
+        {
+            return rootObject.GetInstanceID() == sourceObj.GetInstanceID();
+
+        }
+
     }
 
     private float DistancePlanePoint(Vector3 planeNormal, Vector3 planePoint, Vector3 point)

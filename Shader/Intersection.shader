@@ -57,7 +57,7 @@ Shader "Custom/Intersection"
                 float2 screenUv=i.screenPos.xy/i.screenPos.w;
                 float depth=LinearEyeDepth(SAMPLE_DEPTH_TEXTURE(_CameraDepthTexture,screenUv));  
                 float screenDepth=i.screenPos.w-depth+_DepthDist; //depth is this object depth i.screenPos.w is background depth
-                float t=step(0.01,screenDepth);
+                float t=smoothstep(0.01,0.1,screenDepth);
                 float4 color=lerp(_Color1,_Color2,t);
 				rimLight=lerp(rimLight,1,t);
                 return rimLight*color;
