@@ -1,9 +1,11 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Experimental.SceneManagement;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 
 public class Placer : EditorWindow
 
@@ -15,15 +17,17 @@ public class Placer : EditorWindow
     }
 
     public float spawnRadius = 2f;
+    public float rotationOffset = 0f;
     public float spacing = 0.1f;
     public float deletionRadius = 2f;
     public int spawnCount = 7;
     public bool on = true;
     public bool randomRotation = false;
+    public float randAngle = 180f;
     public bool randomScale = false;
     public float scaleRange = 0.1f;
     public Color radiusColor = new Color(0.839f, 0.058f, 0.435f, 0.784f);
-    public float offset = 0f;
+    public float heightOffset = 0f;
     public bool keepRootRotation = false;
     public Mode mode = Mode.Scatter;
 
@@ -33,12 +37,14 @@ public class Placer : EditorWindow
 
     SerializedObject so;
     SerializedProperty propRadius;
+    SerializedProperty propRotationOffset;
     SerializedProperty propSpacing;
     SerializedProperty propDeletionRadius;
     SerializedProperty propSpawnCount;
     SerializedProperty propPrefab;
-    SerializedProperty propOffset;
+    SerializedProperty propHeightOffset;
     SerializedProperty propRandomRotation;
+    SerializedProperty propRandAngle;
     SerializedProperty propScaleRange;
     SerializedProperty propRandomScale;
     SerializedProperty propPreviewMaterial;
@@ -51,9 +57,8 @@ public class Placer : EditorWindow
     private Pose hitPoint;
     private float[] randValues;
     private List<Pose> poseList = new List<Pose>();
-    private List<Vector2> randPoints;
+    private RandPoints randPoints;
     private bool showPreviewSetting = false;
-    private float discThickness = 2f;
     private bool shift = false;
     private bool ctrl = false;
     private bool alt = false;
@@ -82,6 +87,12 @@ public class Placer : EditorWindow
         }
     }
 
+    public struct RandPoints
+    {
+        public List<Vector2> points;
+        public float minDistance;
+    }
+
     public enum Mode
     {
         Scatter,
@@ -93,8 +104,6 @@ public class Placer : EditorWindow
     private void OnEnable()
     {
         SceneView.duringSceneGui += DuringSceneGUI;
-        Camera.main.depthTextureMode = DepthTextureMode.Depth;   //intersection shader need depth texture
-
         so = new SerializedObject(this);
         propRadius = so.FindProperty(nameof(spawnRadius));
         propDeletionRadius = so.FindProperty(nameof(deletionRadius));
@@ -104,11 +113,13 @@ public class Placer : EditorWindow
         propPreviewMaterial = so.FindProperty(nameof(previewMaterial));
         propDeletionMaterial = so.FindProperty(nameof(deletionMaterial));
         propColor = so.FindProperty(nameof(radiusColor));
-        propOffset = so.FindProperty(nameof(offset));
+        propHeightOffset = so.FindProperty(nameof(heightOffset));
         propScaleRange = so.FindProperty(nameof(scaleRange));
         propKeepRootRotation = so.FindProperty(nameof(keepRootRotation));
         propRandomScale = so.FindProperty(nameof(randomScale));
         propSpacing = so.FindProperty(nameof(spacing));
+        propRandAngle = so.FindProperty(nameof(randAngle));
+        propRotationOffset = so.FindProperty(nameof(rotationOffset));
 
         GenerateRandPoints();
         GenerateRandValues();
@@ -126,7 +137,7 @@ public class Placer : EditorWindow
 
         GUIContent[] toolIcons =
         {
-                EditorGUIUtility.TrIconContent("TerrainInspector.TerrainToolAdd", "Scatter"),   
+                EditorGUIUtility.TrIconContent("TerrainInspector.TerrainToolAdd", "Scatter"),
                 EditorGUIUtility.TrIconContent("TerrainInspector.TerrainToolAdd", "Place"),
                 EditorGUIUtility.TrIconContent("TerrainInspector.TerrainToolAdd", "Deletion"),
                 EditorGUIUtility.TrIconContent("TerrainInspector.TerrainToolAdd", "None"),
@@ -175,7 +186,7 @@ public class Placer : EditorWindow
                 }
             }
 
-            EditorGUILayout.PropertyField(propOffset);
+            EditorGUILayout.PropertyField(propHeightOffset);
             if (mode != Mode.None)
             {
                 EditorGUILayout.PropertyField(propPrefab);
@@ -183,8 +194,18 @@ public class Placer : EditorWindow
             GUILayout.Space(15);
             if (mode == Mode.Scatter || mode == Mode.Place)
             {
+                EditorGUILayout.PropertyField(propRotationOffset);
+                propRotationOffset.floatValue = Mathf.Clamp(propRotationOffset.floatValue, 0f, 360f);
                 EditorGUILayout.PropertyField(propKeepRootRotation);
                 EditorGUILayout.PropertyField(propRandomRotation);
+                if (randomRotation)
+                {
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(propRandAngle, new GUIContent("Euler Angle"));
+                    propRandAngle.floatValue = Mathf.Clamp(propRandAngle.floatValue, 0f, 360f);
+                    EditorGUI.indentLevel--;
+                }
+                EditorGUILayout.Space(10);
                 EditorGUILayout.PropertyField(propRandomScale);
                 if (randomScale)
                 {
@@ -233,7 +254,6 @@ public class Placer : EditorWindow
     private void DuringSceneGUI(SceneView scene)
     {
         bool isInPrefabMode = (PrefabStageUtility.GetCurrentPrefabStage() != null);
-        CheckInputToggleActive();
         if (!on || isInPrefabMode) return;
         Handles.zTest = CompareFunction.LessEqual;
         List<PointWithOrientation> pointList = new List<PointWithOrientation>();
@@ -345,21 +365,20 @@ public class Placer : EditorWindow
         {
             case Mode.Delete:
                 {
-                    DrawDisc(hit, GetInverseColor(radiusColor), deletionRadius, discThickness);
+                    DrawDisc(hit, GetInverseColor(radiusColor), deletionRadius);
                     PointWithOrientation pointInfo = new PointWithOrientation(hit.point, hitTangent, hitNormal);
                     pointList.Add(pointInfo);
                     break;
                 }
             case Mode.Scatter:
                 {
-                    DrawDisc(hit, radiusColor, spawnRadius, discThickness);
-                    foreach (Vector2 p in randPoints)
+                    float raycastOffset = spawnRadius / 5f;
+                    DrawDisc(hit, radiusColor, spawnRadius);
+                    foreach (Vector2 p in randPoints.points)
                     {
                         Vector3 worldPos = GetWorldPosFromLocal(p, hit.point, hitTangent, hitNormal, hitBitangent);
-                        Ray pointRay = new Ray(worldPos, -hitNormal);
-                        float dist = GetObjectBoundingBoxSize(originalPrefab);
-                        if (dist == -1f) return;
-                        if (Physics.Raycast(pointRay, out RaycastHit pointHit, dist))
+                        Ray pointRay = new Ray(worldPos + hitNormal * raycastOffset, -hitNormal);
+                        if (Physics.Raycast(pointRay, out RaycastHit pointHit, raycastOffset * 3f))
                         {
                             Vector3 forward = Vector3.Cross(pointHit.normal, cam.transform.up).normalized;
                             Vector3 up = pointHit.normal;
@@ -402,16 +421,6 @@ public class Placer : EditorWindow
                 }
                 Event.current.Use();
             }
-        }
-    }
-
-    private void CheckInputToggleActive()
-    {
-        if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.ScrollLock) //オンオフ切り替え
-        {
-            on = !on;
-            currentText = on ? deactivateText : activateText;
-            Repaint();
         }
     }
 
@@ -483,8 +492,8 @@ public class Placer : EditorWindow
     {
         float scrollDir = Mathf.Sign(Event.current.delta.y);
         so.Update();
-        float newValue = Mathf.Clamp(propOffset.floatValue - scrollDir * 0.1f, minOffset, maxOffset);
-        propOffset.floatValue = newValue;
+        float newValue = Mathf.Clamp(propHeightOffset.floatValue - scrollDir * 0.1f, minOffset, maxOffset);
+        propHeightOffset.floatValue = newValue;
         so.ApplyModifiedPropertiesWithoutUndo();
     }
     private void AdjustRadius()
@@ -537,20 +546,17 @@ public class Placer : EditorWindow
         {
             Pose point;
             Quaternion rot = Quaternion.LookRotation(pointList[i].forward, pointList[i].up);
-            point.rotation = randomRotation ? Quaternion.AngleAxis(randValues[i] * 360f, pointList[i].up) * rot : rot;
+            if (randomRotation)
+            {
+                point.rotation = Quaternion.AngleAxis(randValues[i] * randAngle + rotationOffset, pointList[i].up) * rot;
+            }
+            else
+            {
+                point.rotation = Quaternion.AngleAxis(rotationOffset, pointList[i].up) * rot;
+            }
             point.position = pointList[i].position;
             poseList.Add(point);
         }
-    }
-    private void DrawAxisGizmo(Vector3 position, Vector3 forward, Vector3 up, Vector3 right)
-    {
-        float scale = HandleUtility.GetHandleSize(position) * 0.35f;
-        Handles.color = Color.red;
-        Handles.DrawAAPolyLine(5, position, position + forward * scale);
-        Handles.color = Color.blue;
-        Handles.DrawAAPolyLine(5, position, position + right * scale);
-        Handles.color = Color.green;
-        Handles.DrawAAPolyLine(5, position, position + up * scale);
     }
 
     private void ReleaseHotControl()
@@ -573,7 +579,7 @@ public class Placer : EditorWindow
             for (int i = 0; i < poseList.Count; i++)
             {
                 Matrix4x4 localToWorld = Matrix4x4.TRS(poseList[i].position, poseList[i].rotation, Vector3.one);
-                DrawMesh(go, localToWorld, !keepRootRotation, randomScale,i);
+                DrawMesh(go, localToWorld, !keepRootRotation, randomScale, i);
             }
         }
     }
@@ -600,20 +606,32 @@ public class Placer : EditorWindow
         }
         else
         {
-            GameObject[] objs = PrefabUtility.FindAllInstancesOfPrefab(originalPrefab);
+            List<GameObject> objs = FindAllInstancesOfPrefab(originalPrefab);
             foreach (GameObject o in objs)
             {
                 float distance = Vector3.Distance(o.transform.position, hitPoint.position);
                 if (distance < deletionRadius && IsWithinDeletionHeightRange(o))
                 {
                     objsList.Add(o);
-
                 }
             }
             return objsList;
         }
     }
 
+    private List<GameObject> FindAllInstancesOfPrefab(GameObject prefab)
+    {
+        List<GameObject> foundInstances = new List<GameObject>();
+        GameObject[] allObjects = (GameObject[])FindObjectsOfType(typeof(GameObject));
+        foreach (GameObject obj in allObjects)
+        {
+            if (PrefabUtility.GetCorrespondingObjectFromOriginalSource(obj) == prefab)
+            {
+                foundInstances.Add(obj);
+            }
+        }
+        return foundInstances;
+    }
     private void DrawDeletionPreviews(List<GameObject> objs)
     {
         if (deletionMaterial == null) return;
@@ -629,33 +647,33 @@ public class Placer : EditorWindow
         }
     }
 
-        private void DrawMesh(GameObject o, Matrix4x4 localToWorld, bool ignoreParentRotation, bool randScale, int randScaleIndex = -1)
+    private void DrawMesh(GameObject o, Matrix4x4 localToWorld, bool ignoreParentRotation, bool randScale, int randScaleIndex = -1)
+    {
+        if (previewMaterial == null) return;
+        previewMaterial.SetPass(0);
+        MeshFilter[] filters = o.GetComponentsInChildren<MeshFilter>();
+        Matrix4x4 yAxisOffsetMatrix = Matrix4x4.TRS(new Vector3(0f, heightOffset, 0f), Quaternion.identity, Vector3.one);
+        Matrix4x4 ignoreParentPositionMatrix = Matrix4x4.TRS(-o.transform.position, Quaternion.identity, Vector3.one);
+        Matrix4x4 ignoreParentMatrix = ignoreParentPositionMatrix;
+        if (ignoreParentRotation)
         {
-            if (previewMaterial == null) return;
-            previewMaterial.SetPass(0);
-            MeshFilter[] filters = o.GetComponentsInChildren<MeshFilter>();
-            Matrix4x4 yAxisOffsetMatrix = Matrix4x4.TRS(new Vector3(0f, offset, 0f), Quaternion.identity, Vector3.one);
-            Matrix4x4 ignoreParentPositionMatrix = Matrix4x4.TRS(-o.transform.position, Quaternion.identity, Vector3.one);
-            Matrix4x4 ignoreParentMatrix = ignoreParentPositionMatrix;
-            if (ignoreParentRotation)
-            {
-                Matrix4x4 ignoreParentRotationMatrix = Matrix4x4.TRS(Vector3.zero, Quaternion.Inverse(o.transform.rotation), Vector3.one);
-                ignoreParentMatrix = ignoreParentRotationMatrix * ignoreParentMatrix;
-            }
-            foreach (MeshFilter filter in filters)
-            {
-                Mesh mesh = filter.sharedMesh;
-                Matrix4x4 childMatrix = filter.transform.localToWorldMatrix;
-                Matrix4x4 outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
-                if (randScale)
-                {
-                    float scale = randValues[randScaleIndex] * 2 - 1;
-                    scale *= scaleRange;
-                    outputMatrix = outputMatrix * Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * (1 + scale));
-                }
-                Graphics.DrawMeshNow(mesh, outputMatrix);
-            }
+            Matrix4x4 ignoreParentRotationMatrix = Matrix4x4.TRS(Vector3.zero, Quaternion.Inverse(o.transform.rotation), Vector3.one);
+            ignoreParentMatrix = ignoreParentRotationMatrix * ignoreParentMatrix;
         }
+        foreach (MeshFilter filter in filters)
+        {
+            Mesh mesh = filter.sharedMesh;
+            Matrix4x4 childMatrix = filter.transform.localToWorldMatrix;
+            Matrix4x4 outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
+            if (randScale)
+            {
+                float scale = randValues[randScaleIndex] * 2 - 1;
+                scale *= scaleRange;
+                outputMatrix = outputMatrix * Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * (1 + scale));
+            }
+            Graphics.DrawMeshNow(mesh, outputMatrix);
+        }
+    }
 
     private void SnapObjects()
     {
@@ -663,7 +681,7 @@ public class Placer : EditorWindow
         for (int i = 0; i < Selection.gameObjects.Length; i++)
         {
             Undo.RecordObject(Selection.gameObjects[i].transform, "Snap");
-            Selection.gameObjects[i].transform.position = hitPoint.position + hitPoint.rotation * new Vector3(0f, offset, 0f);
+            Selection.gameObjects[i].transform.position = hitPoint.position + hitPoint.rotation * new Vector3(0f, heightOffset, 0f);
             Selection.gameObjects[i].transform.rotation = hitPoint.rotation;
         }
     }
@@ -671,21 +689,21 @@ public class Placer : EditorWindow
     private void SpawnPrefabs(List<Pose> poseList)
     {
         if (originalPrefab == null) return;
-        for (int i=0; i<poseList.Count; i++)
+        for (int i = 0; i < poseList.Count; i++)
         {
             GameObject spawnObject = (GameObject)PrefabUtility.InstantiatePrefab(originalPrefab);
             Undo.RegisterCreatedObjectUndo(spawnObject, "Spawn Objects");
-            spawnObject.transform.position = poseList[i].position + poseList[i].rotation * new Vector3(0f, offset, 0f);
+            spawnObject.transform.position = poseList[i].position + poseList[i].rotation * new Vector3(0f, heightOffset, 0f);
             spawnObject.transform.rotation = keepRootRotation ? poseList[i].rotation * originalPrefab.transform.rotation : poseList[i].rotation;
             if (randomScale)
             {
-                float scale = randValues[i] * 2 - 1;
+                float scale = randValues[i] * 2 - 1; //-1 ~ 1
                 scale *= scaleRange;
                 spawnObject.transform.localScale = spawnObject.transform.localScale * (1 + scale);
             }
         }
-            GenerateRandPoints();
-            GenerateRandValues();
+        GenerateRandPoints();
+        GenerateRandValues();
     }
 
     private void GenerateRandValues()
@@ -700,7 +718,8 @@ public class Placer : EditorWindow
     private void GenerateRandPoints()
     {
         int retryCount = 0;
-        randPoints = new List<Vector2>();
+        randPoints.points = new List<Vector2>();
+        randPoints.minDistance = float.MaxValue;
         for (int i = 0; i < spawnCount; i++)
         {
             Vector2 newPoint = Random.insideUnitCircle;
@@ -708,42 +727,43 @@ public class Placer : EditorWindow
             {
                 if (retryCount > 20)
                 {
-                    Debug.Log("aaa");
                     return;
                 }
                 newPoint = Random.insideUnitCircle;
                 retryCount++;
             }
             retryCount = 0;
-            randPoints.Add(newPoint);
+            randPoints.points.Add(newPoint);
         }
     }
 
     private bool IsPointValid(Vector2 point)
     {
-        return !randPoints.Any(existingPoint => Vector2.Distance(existingPoint, point) * spawnRadius < spacing);
+        foreach (Vector2 existingPoint in randPoints.points)
+        {
+            float distance = Vector2.Distance(existingPoint, point);
+            if (distance * spawnRadius < spacing)
+            {
+                return false;
+            }
+            randPoints.minDistance = Mathf.Min(randPoints.minDistance, distance);
+        }
+        return true;
     }
 
     private void ValidateRandPoints()
     {
-        for (int i = 0; i < randPoints.Count - 1; i++)
+        float currentPointAmout = randPoints.points.Count;
+        if (currentPointAmout < spawnCount || randPoints.minDistance * spawnRadius < spacing)
         {
-            for (int j = i + 1; j < randPoints.Count; j++)
-            {
-                float dist = Vector2.Distance(randPoints[i], randPoints[j]);
-                if (dist * spawnRadius < spacing)
-                {
-                    GenerateRandPoints();
-                    return;
-                }
-            }
+            GenerateRandPoints();
         }
     }
 
-    private void DrawDisc(RaycastHit hit, Color color, float radius, float thickness)
+    private void DrawDisc(RaycastHit hit, Color color, float radius)
     {
         Handles.color = color;
-        Handles.DrawWireDisc(hit.point, hit.normal, radius, thickness);
+        Handles.DrawWireDisc(hit.point, hit.normal, radius);
         Handles.color = Color.white;
     }
 
@@ -791,8 +811,14 @@ public class Placer : EditorWindow
         return new Color(1 - color.r, 1 - color.g, 1 - color.b, color.a);
     }
 
-    private bool IsPrefab(GameObject o)
+    private void DrawAxisGizmo(Vector3 position, Vector3 forward, Vector3 up, Vector3 right)
     {
-        return o.scene.name == null;
+        float scale = HandleUtility.GetHandleSize(position) * 0.35f;
+        Handles.color = Color.red;
+        Handles.DrawAAPolyLine(5, position, position + forward * scale);
+        Handles.color = Color.blue;
+        Handles.DrawAAPolyLine(5, position, position + right * scale);
+        Handles.color = Color.green;
+        Handles.DrawAAPolyLine(5, position, position + up * scale);
     }
 }
