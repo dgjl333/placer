@@ -16,22 +16,22 @@ public class Placer : EditorWindow
         GetWindow<Placer>();
     }
 
-    public float spawnRadius = 2f;
+    public float spawnRadius = 3f;
     public float rotationOffset = 0f;
     public float spacing = 0.1f;
-    public float deletionRadius = 2f;
-    public int spawnCount = 7;
+    public float deletionRadius = 1f;
+    public int spawnCount = 5;
     public bool on = true;
     public bool randomRotation = false;
     public float randAngle = 180f;
     public bool randomScale = false;
     public float scaleRange = 0.1f;
-    public Color radiusColor = new Color(0.839f, 0.058f, 0.435f, 0.784f);
+    public Color radiusColor = new Color(0.866f, 0.160f, 0.498f, 1f);
     public float heightOffset = 0f;
     public bool keepRootRotation = false;
     public Mode mode = Mode.Scatter;
 
-    public GameObject prefab = null;
+    public GameObject prefab;
     public Material previewMaterial;
     public Material deletionMaterial;
 
@@ -65,6 +65,7 @@ public class Placer : EditorWindow
     private string activateText = "Activate";
     private string deactivateText = "Deactivate";
     private string currentText;
+    private float GizmoWidth = 3.5f;
 
     private int controlID;
 
@@ -125,6 +126,8 @@ public class Placer : EditorWindow
         GenerateRandValues();
         currentText = on ? deactivateText : activateText;
         controlID = GUIUtility.GetControlID(FocusType.Passive);
+
+        LoadAssets();
     }
 
     private void OnDisable()
@@ -234,6 +237,9 @@ public class Placer : EditorWindow
             if (prefab != null)
             {
                 originalPrefab = PrefabUtility.GetCorrespondingObjectFromOriginalSource(prefab);
+                so.Update();
+                propPrefab.objectReferenceValue = originalPrefab;
+                so.ApplyModifiedProperties();
             }
             else
             {
@@ -357,30 +363,40 @@ public class Placer : EditorWindow
     {
         Vector3 hitNormal = hit.normal;
         Vector3 hitTangent = Vector3.Cross(hitNormal, cam.transform.up).normalized;
+        if (hitTangent.sqrMagnitude < 0.001f)
+        {
+            hitTangent = Vector3.Cross(hitNormal, cam.transform.right).normalized;
+        }
         Vector3 hitBitangent = Vector3.Cross(hitNormal, hitTangent);
         hitPoint.position = hit.point;
-        hitPoint.rotation = Quaternion.LookRotation(hitTangent, hitNormal);
+        hitPoint.rotation = Quaternion.AngleAxis(rotationOffset,hitNormal) * Quaternion.LookRotation(hitTangent, hitNormal);
         if (ctrl || originalPrefab == null) return;
         switch (mode)
         {
             case Mode.Delete:
                 {
-                    DrawDisc(hit, GetInverseColor(radiusColor), deletionRadius);
+                    DrawRange(hit, GetInverseColor(radiusColor), deletionRadius);
                     PointWithOrientation pointInfo = new PointWithOrientation(hit.point, hitTangent, hitNormal);
                     pointList.Add(pointInfo);
                     break;
                 }
             case Mode.Scatter:
                 {
-                    float raycastOffset = spawnRadius / 5f;
-                    DrawDisc(hit, radiusColor, spawnRadius);
+                    DrawRange(hit, radiusColor, spawnRadius);
+                    DrawAxisGizmo(hit.point, hitTangent, hitNormal, hitBitangent);
+                    float raycastOffset = GetRaycastOffset();
+                    float raycastmaxDistance = GetRaycastMaxDistance();
                     foreach (Vector2 p in randPoints.points)
                     {
-                        Vector3 worldPos = GetWorldPosFromLocal(p, hit.point, hitTangent, hitNormal, hitBitangent);
+                        Vector3 worldPos = GetWorldPosFromLocal(p, hit.point, hitTangent, hitNormal, hitBitangent, spawnRadius);
                         Ray pointRay = new Ray(worldPos + hitNormal * raycastOffset, -hitNormal);
-                        if (Physics.Raycast(pointRay, out RaycastHit pointHit, raycastOffset * 3f))
+                        if (Physics.Raycast(pointRay, out RaycastHit pointHit, raycastmaxDistance))
                         {
                             Vector3 forward = Vector3.Cross(pointHit.normal, cam.transform.up).normalized;
+                            if (forward.sqrMagnitude < 0.001f)
+                            {
+                                forward = Vector3.Cross(pointHit.normal, cam.transform.right).normalized;
+                            }
                             Vector3 up = pointHit.normal;
                             PointWithOrientation lookdirection = new PointWithOrientation(pointHit.point, forward, up);
                             pointList.Add(lookdirection);
@@ -398,6 +414,16 @@ public class Placer : EditorWindow
             default:
                 break;
         }
+    }
+
+    private float GetRaycastOffset()
+    {
+        return spawnRadius / 3f;
+    }
+
+    private float GetRaycastMaxDistance()
+    {
+        return GetRaycastOffset() * 3f;
     }
 
     private void DrawSnapObjectsPreview()
@@ -441,7 +467,7 @@ public class Placer : EditorWindow
 
     private void CheckInputShiftDown()
     {
-        if (Event.current.isMouse && Event.current.type == EventType.MouseDown)
+        if (Event.current.isMouse && Event.current.type == EventType.MouseDown && Event.current.button == 0) //left click
         {
             SpawnPrefabs(poseList);
             if (mode != Mode.None)
@@ -455,7 +481,7 @@ public class Placer : EditorWindow
 
     private void SnapModeInputCheck()
     {
-        if (Event.current.isMouse && Event.current.type == EventType.MouseDown && Event.current.button == 0) //leftクリック
+        if (Event.current.isMouse && Event.current.type == EventType.MouseDown && Event.current.button == 0)
         {
             SnapObjects();
             GUIUtility.hotControl = controlID;
@@ -466,7 +492,6 @@ public class Placer : EditorWindow
 
     private void ScrollWheelCheck()
     {
-
         if (Event.current.type == EventType.ScrollWheel) //オフセット調整
         {
             if (shift && (mode == Mode.Scatter || mode == Mode.Delete))
@@ -479,7 +504,6 @@ public class Placer : EditorWindow
                 AdjustOffset();
                 UseEvent();
             }
-
         }
         void UseEvent()
         {
@@ -496,6 +520,7 @@ public class Placer : EditorWindow
         propHeightOffset.floatValue = newValue;
         so.ApplyModifiedPropertiesWithoutUndo();
     }
+
     private void AdjustRadius()
     {
         float scrollDir = Mathf.Sign(Event.current.delta.y);
@@ -528,7 +553,7 @@ public class Placer : EditorWindow
         return -1f;
     }
 
-    private Vector3 GetWorldPosFromLocal(Vector2 Localposition, Vector3 origin, Vector3 forward, Vector3 up, Vector3 right)
+    private Vector3 GetWorldPosFromLocal(Vector2 Localposition, Vector3 origin, Vector3 forward, Vector3 up, Vector3 right, float radius)
     {
         Matrix4x4 loccalToWorldMatrix = new Matrix4x4(
         new Vector4(forward.x, forward.y, forward.z, 0),
@@ -536,9 +561,10 @@ public class Placer : EditorWindow
         new Vector4(right.x, right.y, right.z, 0),
         new Vector4(origin.x, origin.y, origin.z, 1)
     );
-        Vector3 pointLocal = new Vector3(Localposition.x * spawnRadius, 0.2f, Localposition.y * spawnRadius); // a little above surface
+        Vector3 pointLocal = new Vector3(Localposition.x, 0f, Localposition.y) * radius;
         return loccalToWorldMatrix.MultiplyPoint3x4(pointLocal);
     }
+
     private void OccupyPoseList(List<PointWithOrientation> pointList)
     {
         poseList.Clear();
@@ -632,6 +658,7 @@ public class Placer : EditorWindow
         }
         return foundInstances;
     }
+
     private void DrawDeletionPreviews(List<GameObject> objs)
     {
         if (deletionMaterial == null) return;
@@ -760,10 +787,80 @@ public class Placer : EditorWindow
         }
     }
 
-    private void DrawDisc(RaycastHit hit, Color color, float radius)
+    private void DrawRange(RaycastHit hit, Color color, float radius)
+    {
+        int segments = 63;
+        Vector3[] points = new Vector3[segments];
+        for (int i = 0; i < segments; i++)
+        {
+            float t = i / (float)segments;
+            float angle = 2 * Mathf.PI * t;
+            Vector2 pointLS = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+            Vector3 forward = Vector3.Cross(hit.normal, Vector3.up).normalized;
+            if (forward.sqrMagnitude < 0.001f)
+            {
+                forward = Vector3.Cross(hit.normal, Vector3.right).normalized;
+            }
+            Vector3 right = Vector3.Cross(forward, hit.normal);
+            Vector3 pointWS = GetWorldPosFromLocal(pointLS, hit.point, forward, hit.normal, right, radius);
+            points[i] = pointWS;
+        }
+
+        Vector3?[] surfaceHits = new Vector3?[segments + 1];
+        float raycastOffset = GetRaycastOffset();
+        float raycastmaxDistance = GetRaycastMaxDistance();
+        for (int i = 0; i < segments; i++)
+        {
+            Ray pointRay = new Ray(points[i] + hit.normal * raycastOffset, -hit.normal);
+            if (Physics.Raycast(pointRay, out RaycastHit pointHit, raycastmaxDistance))
+            {
+                surfaceHits[i] = pointHit.point;
+            }
+            else
+            {
+                surfaceHits[i] = null;
+            }
+        }
+
+        for (int i = 0; i < segments; i++)  //connect last element to first
+        {
+            if (surfaceHits[i] != null)
+            {
+                surfaceHits[segments] = surfaceHits[i];
+                break;
+            }
+        }
+        DrawLinesOnSurface(surfaceHits, color);
+    }
+
+    private void DrawLinesOnSurface(Vector3?[] surfaceHits, Color color)
     {
         Handles.color = color;
-        Handles.DrawWireDisc(hit.point, hit.normal, radius);
+        Vector3? lastPoint = null;
+        bool isNull = false;
+        for (int i = 0; i < surfaceHits.Length; i++)
+        {
+            if (surfaceHits[i] == null)
+            {
+                isNull = true;
+                continue;
+            }
+            if (lastPoint == null)
+            {
+                lastPoint = surfaceHits[i];
+                continue;
+            }
+            if (!isNull)
+            {
+                Handles.DrawAAPolyLine(GizmoWidth, (Vector3)lastPoint, (Vector3)surfaceHits[i]);
+            }
+            else
+            {
+                Handles.DrawDottedLine((Vector3)lastPoint, (Vector3)surfaceHits[i], 7);
+            }
+            lastPoint = surfaceHits[i];
+            isNull = false;
+        }
         Handles.color = Color.white;
     }
 
@@ -813,12 +910,28 @@ public class Placer : EditorWindow
 
     private void DrawAxisGizmo(Vector3 position, Vector3 forward, Vector3 up, Vector3 right)
     {
-        float scale = HandleUtility.GetHandleSize(position) * 0.35f;
-        Handles.color = Color.red;
-        Handles.DrawAAPolyLine(5, position, position + forward * scale);
+        float scale = HandleUtility.GetHandleSize(position) * 0.2f;
+        forward = Quaternion.AngleAxis(rotationOffset, up) * forward;
+        right = Quaternion.AngleAxis(rotationOffset, up) * right;
+        Handles.zTest = CompareFunction.Always;
         Handles.color = Color.blue;
-        Handles.DrawAAPolyLine(5, position, position + right * scale);
+        Handles.DrawAAPolyLine(GizmoWidth, position, position + forward * scale);
+        Handles.color = Color.red;
+        Handles.DrawAAPolyLine(GizmoWidth, position, position + right * scale);
         Handles.color = Color.green;
-        Handles.DrawAAPolyLine(5, position, position + up * scale);
+        Handles.DrawAAPolyLine(GizmoWidth, position, position + up * scale);
     }
+
+    private void LoadAssets()
+    {
+        if (previewMaterial == null)
+        {
+            previewMaterial = (Material)AssetDatabase.LoadAssetAtPath("Assets/CustomEditor/Material/Preview.mat", typeof(Material));
+        }
+        if (deletionMaterial == null)
+        {
+            deletionMaterial = (Material)AssetDatabase.LoadAssetAtPath("Assets/CustomEditor/Material/Deletion.mat", typeof(Material));
+        }
+    }
+
 }
