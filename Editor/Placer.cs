@@ -5,7 +5,6 @@ using UnityEditor.Experimental.SceneManagement;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
-using UnityEngine.SceneManagement;
 
 public class Placer : EditorWindow
 
@@ -74,6 +73,8 @@ public class Placer : EditorWindow
     private readonly float minOffset = -5f;
     private readonly float maxOffset = 5f;
 
+
+    private GUIContent[] toolIcons;
     private struct PointWithOrientation
     {
         public Vector3 position;
@@ -137,14 +138,6 @@ public class Placer : EditorWindow
 
     private void OnGUI()
     {
-
-        GUIContent[] toolIcons =
-        {
-                EditorGUIUtility.TrIconContent("TerrainInspector.TerrainToolAdd", "Scatter"),
-                EditorGUIUtility.TrIconContent("TerrainInspector.TerrainToolAdd", "Place"),
-                EditorGUIUtility.TrIconContent("TerrainInspector.TerrainToolAdd", "Deletion"),
-                EditorGUIUtility.TrIconContent("TerrainInspector.TerrainToolAdd", "None"),
-            };
         so.Update();
         GUILayout.Space(10);
         GUILayout.BeginHorizontal();
@@ -168,6 +161,7 @@ public class Placer : EditorWindow
                 if (EditorGUI.EndChangeCheck())
                 {
                     propRadius.floatValue = newRadius;
+                    ValidateRandPoints();
                 }
                 EditorGUI.BeginChangeCheck();
                 int newSpawnCount = EditorGUILayout.IntSlider("Spawn Count", propSpawnCount.intValue, 1, 50);
@@ -176,8 +170,13 @@ public class Placer : EditorWindow
                     propSpawnCount.intValue = newSpawnCount;
                     GenerateRandPoints();
                 }
+                EditorGUI.BeginChangeCheck();
                 EditorGUILayout.PropertyField(propSpacing);
                 propSpacing.floatValue = Mathf.Max(0f, propSpacing.floatValue);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    ValidateRandPoints();
+                }
             }
             else if (mode == Mode.Delete)
             {
@@ -193,6 +192,7 @@ public class Placer : EditorWindow
             if (mode != Mode.None)
             {
                 EditorGUILayout.PropertyField(propPrefab);
+
             }
             GUILayout.Space(15);
             if (mode == Mode.Scatter || mode == Mode.Place)
@@ -245,8 +245,6 @@ public class Placer : EditorWindow
             {
                 originalPrefab = null;
             }
-            ValidateRandPoints();
-            GenerateRandValues();
             SceneView.RepaintAll();
 
         }
@@ -932,6 +930,13 @@ public class Placer : EditorWindow
         {
             deletionMaterial = (Material)AssetDatabase.LoadAssetAtPath("Assets/CustomEditor/Material/Deletion.mat", typeof(Material));
         }
+        // https://github.com/halak/unity-editor-icons
+        toolIcons = new GUIContent[]
+        {
+                EditorGUIUtility.TrIconContent("d_Grid.PaintTool", "Scatter"),
+                EditorGUIUtility.TrIconContent("ViewToolMove", "Place"),
+                EditorGUIUtility.TrIconContent("Grid.EraserTool", "Deletion"),
+                EditorGUIUtility.TrIconContent("d_SceneViewSnap", "None"),
+        };
     }
-
 }
