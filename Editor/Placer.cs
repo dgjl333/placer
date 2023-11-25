@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Experimental.SceneManagement;
@@ -73,8 +74,7 @@ public class Placer : EditorWindow
     private readonly float minOffset = -5f;
     private readonly float maxOffset = 5f;
 
-
-    private GUIContent[] toolIcons;
+    [SerializeField] private GUIContent[] toolIcons;
     private struct PointWithOrientation
     {
         public Vector3 position;
@@ -106,6 +106,25 @@ public class Placer : EditorWindow
     private void OnEnable()
     {
         SceneView.duringSceneGui += DuringSceneGUI;
+        Camera.main.depthTextureMode = DepthTextureMode.Depth;
+        GetProperties();
+        GenerateRandPoints();
+        GenerateRandValues();
+        currentText = on ? deactivateText : activateText;
+        controlID = GUIUtility.GetControlID(FocusType.Passive);
+
+        LoadData();
+        LoadAssets(false);
+    }
+
+    private void OnDisable()
+    {
+        SaveData();
+        SceneView.duringSceneGui -= DuringSceneGUI;
+    }
+
+    private void GetProperties()
+    {
         so = new SerializedObject(this);
         propRadius = so.FindProperty(nameof(spawnRadius));
         propDeletionRadius = so.FindProperty(nameof(deletionRadius));
@@ -122,18 +141,6 @@ public class Placer : EditorWindow
         propSpacing = so.FindProperty(nameof(spacing));
         propRandAngle = so.FindProperty(nameof(randAngle));
         propRotationOffset = so.FindProperty(nameof(rotationOffset));
-
-        GenerateRandPoints();
-        GenerateRandValues();
-        currentText = on ? deactivateText : activateText;
-        controlID = GUIUtility.GetControlID(FocusType.Passive);
-
-        LoadAssets();
-    }
-
-    private void OnDisable()
-    {
-        SceneView.duringSceneGui -= DuringSceneGUI;
     }
 
     private void OnGUI()
@@ -246,9 +253,8 @@ public class Placer : EditorWindow
                 originalPrefab = null;
             }
             SceneView.RepaintAll();
-
         }
-        if (Event.current.type == EventType.MouseDown && Event.current.button == 0) //左クリックでUNFOCUS
+        if (Event.current.type == EventType.MouseDown && Event.current.button == 0)   //unfocus the window when click elsewhere
         {
             GUI.FocusControl(null);
             Repaint();
@@ -261,15 +267,20 @@ public class Placer : EditorWindow
         if (!on || isInPrefabMode) return;
         Handles.zTest = CompareFunction.LessEqual;
         List<PointWithOrientation> pointList = new List<PointWithOrientation>();
+        bool isSnappedMode = ctrl;
         if (Event.current.type == EventType.MouseMove)
         {
             scene.Repaint();
         }
 
         KeyModifierCheck();
-        RaycastToMousePosition(pointList, scene.camera);
+        if (mode != Mode.None || ctrl)
+        {
+            RaycastToMousePosition(pointList, scene.camera, isSnappedMode);
+
+        }
         ScrollWheelCheck();
-        if (ctrl)
+        if (isSnappedMode)
         {
             DrawSnapObjectsPreview();
             SnapModeInputCheck();
@@ -277,7 +288,7 @@ public class Placer : EditorWindow
         switch (mode)
         {
             case Mode.Delete:
-                if (ctrl || originalPrefab == null) return;
+                if (isSnappedMode || originalPrefab == null) return;
                 DeleteModeInputCheck();
                 List<GameObject> objsInDeletionRange = GetObjectsInDeletionRange();
                 DrawDeletionPreviews(objsInDeletionRange);
@@ -285,21 +296,22 @@ public class Placer : EditorWindow
             default:
                 OccupyPoseList(pointList);
                 NonDeleteModeInputCheck();
-                if (originalPrefab != null && !ctrl)
+                if (originalPrefab != null && !isSnappedMode)
                 {
                     DrawObjectPreview(originalPrefab, false);
                 }
                 break;
         }
+        Handles.zTest = CompareFunction.Always;
     }
 
-    private void RaycastToMousePosition(List<PointWithOrientation> pointList, Camera cam)
+    private void RaycastToMousePosition(List<PointWithOrientation> pointList, Camera cam, bool isSnappedMode)
     {
         Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
         if (Physics.Raycast(ray, out RaycastHit hit))
         {
             RaycastHit finalHit = hit;
-            if (!ctrl) //non snap mode
+            if (!isSnappedMode) //non snap mode
             {
                 switch (mode)
                 {
@@ -513,8 +525,8 @@ public class Placer : EditorWindow
     private void AdjustOffset()
     {
         float scrollDir = Mathf.Sign(Event.current.delta.y);
-        so.Update();
         float newValue = Mathf.Clamp(propHeightOffset.floatValue - scrollDir * 0.1f, minOffset, maxOffset);
+        so.Update();
         propHeightOffset.floatValue = newValue;
         so.ApplyModifiedPropertiesWithoutUndo();
     }
@@ -831,7 +843,7 @@ public class Placer : EditorWindow
         DrawLinesOnSurface(surfaceHits, color);
     }
 
-    private void DrawLinesOnSurface(Vector3?[] surfaceHits, Color color)
+    private void DrawLinesOnSurface(Vector3?[] surfaceHits, Color color) //draw dotted line when null point in between
     {
         Handles.color = color;
         Vector3? lastPoint = null;
@@ -920,23 +932,33 @@ public class Placer : EditorWindow
         Handles.DrawAAPolyLine(GizmoWidth, position, position + up * scale);
     }
 
-    private void LoadAssets()
+    private void LoadAssets(bool forceReload)
     {
-        if (previewMaterial == null)
+        if (forceReload || previewMaterial == null || deletionMaterial == null || toolIcons == null)
         {
-            previewMaterial = (Material)AssetDatabase.LoadAssetAtPath("Assets/CustomEditor/Material/Preview.mat", typeof(Material));
+            string path = Path.GetDirectoryName(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(this)));
+            string parentPath = Path.GetDirectoryName(path);
+            previewMaterial = (Material)AssetDatabase.LoadAssetAtPath(parentPath + "/Material/Preview.mat", typeof(Material));
+            deletionMaterial = (Material)AssetDatabase.LoadAssetAtPath(parentPath + "/Material/Deletion.mat", typeof(Material));
+            toolIcons = new GUIContent[]
+            {
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/brush.png", typeof(Texture)),"Scatter"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/pen.png", typeof(Texture)),"Place"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/rubber.png", typeof(Texture)),"Delete"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/snap.png", typeof(Texture)),"None"),
+            };
         }
-        if (deletionMaterial == null)
-        {
-            deletionMaterial = (Material)AssetDatabase.LoadAssetAtPath("Assets/CustomEditor/Material/Deletion.mat", typeof(Material));
-        }
-        // https://github.com/halak/unity-editor-icons
-        toolIcons = new GUIContent[]
-        {
-                EditorGUIUtility.TrIconContent("d_Grid.PaintTool", "Scatter"),
-                EditorGUIUtility.TrIconContent("ViewToolMove", "Place"),
-                EditorGUIUtility.TrIconContent("Grid.EraserTool", "Deletion"),
-                EditorGUIUtility.TrIconContent("d_SceneViewSnap", "None"),
-        };
+    }
+
+    private void LoadData()
+    {
+        string data = EditorPrefs.GetString(this.GetType().ToString(), JsonUtility.ToJson(this, false));
+        JsonUtility.FromJsonOverwrite(data, this);
+    }
+
+    private void SaveData()
+    {
+        string data = JsonUtility.ToJson(this, false);
+        EditorPrefs.SetString(this.GetType().ToString(), data);
     }
 }
