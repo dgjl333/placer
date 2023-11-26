@@ -6,6 +6,7 @@ using UnityEditor.Experimental.SceneManagement;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 
 public class Placer : EditorWindow
 
@@ -53,7 +54,7 @@ public class Placer : EditorWindow
     SerializedProperty propKeepRootRotation;
 
 
-    [SerializeField] private GameObject originalPrefab;
+    private PrefabInfo prefabInfo;
     private Pose hitPoint;
     private float[] randValues;
     private List<Pose> poseList = new List<Pose>();
@@ -62,6 +63,7 @@ public class Placer : EditorWindow
     private bool shift = false;
     private bool ctrl = false;
     private bool alt = false;
+    private bool isInPrefabMode = false;
     private string activateText = "Activate";
     private string deactivateText = "Deactivate";
     private string currentText;
@@ -75,6 +77,16 @@ public class Placer : EditorWindow
     private readonly float maxOffset = 5f;
 
     [SerializeField] private GUIContent[] toolIcons;
+    [SerializeField] private bool isInit = true;
+
+    private struct PrefabInfo
+    {
+        public GameObject originalPrefab;
+        public bool hasCollider;
+        public List<GameObject> cachedAllInstancedInScene;
+    }
+
+
     private struct PointWithOrientation
     {
         public Vector3 position;
@@ -105,8 +117,8 @@ public class Placer : EditorWindow
 
     private void OnEnable()
     {
+        EditorApplication.hierarchyChanged += OnHierarchyChanged;
         SceneView.duringSceneGui += DuringSceneGUI;
-        Camera.main.depthTextureMode = DepthTextureMode.Depth;
         GetProperties();
         GenerateRandPoints();
         GenerateRandValues();
@@ -114,13 +126,17 @@ public class Placer : EditorWindow
         controlID = GUIUtility.GetControlID(FocusType.Passive);
 
         LoadData();
-        LoadAssets(false);
+        LoadAssets(isInit);
+        isInit = false;
+
+        UpdatePrefabInfo();
     }
 
     private void OnDisable()
     {
         SaveData();
         SceneView.duringSceneGui -= DuringSceneGUI;
+        EditorApplication.hierarchyChanged -= OnHierarchyChanged;
     }
 
     private void GetProperties()
@@ -198,9 +214,14 @@ public class Placer : EditorWindow
             EditorGUILayout.PropertyField(propHeightOffset);
             if (mode != Mode.None)
             {
+                EditorGUI.BeginChangeCheck();
                 EditorGUILayout.PropertyField(propPrefab);
-
+                if (EditorGUI.EndChangeCheck())
+                {
+                    UpdatePrefabInfo();
+                }
             }
+
             GUILayout.Space(15);
             if (mode == Mode.Scatter || mode == Mode.Place)
             {
@@ -241,17 +262,8 @@ public class Placer : EditorWindow
 
         if (so.ApplyModifiedProperties())
         {
-            if (prefab != null)
-            {
-                originalPrefab = PrefabUtility.GetCorrespondingObjectFromOriginalSource(prefab);
-                so.Update();
-                propPrefab.objectReferenceValue = originalPrefab;
-                so.ApplyModifiedProperties();
-            }
-            else
-            {
-                originalPrefab = null;
-            }
+            Debug.Log(000);
+
             SceneView.RepaintAll();
         }
         if (Event.current.type == EventType.MouseDown && Event.current.button == 0)   //unfocus the window when click elsewhere
@@ -259,11 +271,12 @@ public class Placer : EditorWindow
             GUI.FocusControl(null);
             Repaint();
         }
+
     }
 
     private void DuringSceneGUI(SceneView scene)
     {
-        bool isInPrefabMode = (PrefabStageUtility.GetCurrentPrefabStage() != null);
+        isInPrefabMode = (PrefabStageUtility.GetCurrentPrefabStage() != null);
         if (!on || isInPrefabMode) return;
         Handles.zTest = CompareFunction.LessEqual;
         List<PointWithOrientation> pointList = new List<PointWithOrientation>();
@@ -277,7 +290,6 @@ public class Placer : EditorWindow
         if (mode != Mode.None || ctrl)
         {
             RaycastToMousePosition(pointList, scene.camera, isSnappedMode);
-
         }
         ScrollWheelCheck();
         if (isSnappedMode)
@@ -288,7 +300,7 @@ public class Placer : EditorWindow
         switch (mode)
         {
             case Mode.Delete:
-                if (isSnappedMode || originalPrefab == null) return;
+                if (isSnappedMode || prefabInfo.originalPrefab == null) return;
                 DeleteModeInputCheck();
                 List<GameObject> objsInDeletionRange = GetObjectsInDeletionRange();
                 DrawDeletionPreviews(objsInDeletionRange);
@@ -296,9 +308,9 @@ public class Placer : EditorWindow
             default:
                 OccupyPoseList(pointList);
                 NonDeleteModeInputCheck();
-                if (originalPrefab != null && !isSnappedMode)
+                if (prefabInfo.originalPrefab != null && !isSnappedMode)
                 {
-                    DrawObjectPreview(originalPrefab, false);
+                    DrawObjectPreview(prefabInfo.originalPrefab, false);
                 }
                 break;
         }
@@ -316,7 +328,7 @@ public class Placer : EditorWindow
                 switch (mode)
                 {
                     case Mode.Delete:
-                        if (IsObjectFromPrefab(hit.collider.gameObject, originalPrefab))
+                        if (IsObjectFromPrefab(hit.collider.gameObject, prefabInfo.originalPrefab))
                         {
                             RaycastHit[] hits = Physics.RaycastAll(ray);
                             RaycastHit? finalHitNullable = GetValidHitExcludingSamePrefab(hits);
@@ -361,7 +373,7 @@ public class Placer : EditorWindow
     {
         foreach (RaycastHit hit in hits)
         {
-            if (!IsObjectFromPrefab(hit.collider.gameObject, originalPrefab))
+            if (!IsObjectFromPrefab(hit.collider.gameObject, prefabInfo.originalPrefab))
             {
                 return hit;
             }
@@ -379,8 +391,8 @@ public class Placer : EditorWindow
         }
         Vector3 hitBitangent = Vector3.Cross(hitNormal, hitTangent);
         hitPoint.position = hit.point;
-        hitPoint.rotation = Quaternion.AngleAxis(rotationOffset,hitNormal) * Quaternion.LookRotation(hitTangent, hitNormal);
-        if (ctrl || originalPrefab == null) return;
+        hitPoint.rotation = Quaternion.AngleAxis(rotationOffset, hitNormal) * Quaternion.LookRotation(hitTangent, hitNormal);
+        if (ctrl || prefabInfo.originalPrefab == null) return;
         switch (mode)
         {
             case Mode.Delete:
@@ -448,7 +460,7 @@ public class Placer : EditorWindow
     {
         if (shift && Event.current.isMouse && Event.current.type == EventType.MouseDown)
         {
-            if (originalPrefab != null)
+            if (prefabInfo.originalPrefab != null)
             {
                 List<GameObject> deletingObjs = GetObjectsInDeletionRange();
                 foreach (GameObject o in deletingObjs)
@@ -623,14 +635,14 @@ public class Placer : EditorWindow
     private List<GameObject> GetObjectsInDeletionRange()
     {
         List<GameObject> objsList = new List<GameObject>();
-        bool hasCollider = (originalPrefab.GetComponent<Collider>() != null);
+        bool hasCollider = (prefabInfo.originalPrefab.GetComponent<Collider>() != null);
         if (hasCollider)
         {
             Collider[] colliders = Physics.OverlapSphere(hitPoint.position, deletionRadius);
             foreach (Collider c in colliders)
             {
                 GameObject o = c.gameObject;
-                if (originalPrefab == PrefabUtility.GetCorrespondingObjectFromSource(o))
+                if (prefabInfo.originalPrefab == PrefabUtility.GetCorrespondingObjectFromSource(o))
                 {
                     if (IsWithinDeletionHeightRange(o)) //height range 
                     {
@@ -642,7 +654,7 @@ public class Placer : EditorWindow
         }
         else
         {
-            List<GameObject> objs = FindAllInstancesOfPrefab(originalPrefab);
+            List<GameObject> objs = FindAllInstancesOfPrefab(prefabInfo.originalPrefab);
             foreach (GameObject o in objs)
             {
                 float distance = Vector3.Distance(o.transform.position, hitPoint.position);
@@ -725,13 +737,13 @@ public class Placer : EditorWindow
 
     private void SpawnPrefabs(List<Pose> poseList)
     {
-        if (originalPrefab == null) return;
+        if (prefabInfo.originalPrefab == null) return;
         for (int i = 0; i < poseList.Count; i++)
         {
-            GameObject spawnObject = (GameObject)PrefabUtility.InstantiatePrefab(originalPrefab);
+            GameObject spawnObject = (GameObject)PrefabUtility.InstantiatePrefab(prefabInfo.originalPrefab);
             Undo.RegisterCreatedObjectUndo(spawnObject, "Spawn Objects");
             spawnObject.transform.position = poseList[i].position + poseList[i].rotation * new Vector3(0f, heightOffset, 0f);
-            spawnObject.transform.rotation = keepRootRotation ? poseList[i].rotation * originalPrefab.transform.rotation : poseList[i].rotation;
+            spawnObject.transform.rotation = keepRootRotation ? poseList[i].rotation * prefabInfo.originalPrefab.transform.rotation : poseList[i].rotation;
             if (randomScale)
             {
                 float scale = randValues[i] * 2 - 1; //-1 ~ 1
@@ -960,5 +972,24 @@ public class Placer : EditorWindow
     {
         string data = JsonUtility.ToJson(this, false);
         EditorPrefs.SetString(this.GetType().ToString(), data);
+    }
+
+    private void UpdatePrefabInfo()
+    {
+        GameObject obj = (GameObject)propPrefab.objectReferenceValue;
+        if (obj != null)
+        {
+            prefabInfo.originalPrefab = PrefabUtility.GetCorrespondingObjectFromOriginalSource(obj);
+        }
+        else
+        {
+            prefabInfo.originalPrefab = null;
+        }
+        prefabInfo.hasCollider = (prefabInfo.originalPrefab.GetComponent<Collider>() != null);
+    }
+
+    private void OnHierarchyChanged()
+    {
+        if (prefabInfo.originalPrefab == null || prefabInfo.hasCollider || isInPrefabMode) return;
     }
 }
