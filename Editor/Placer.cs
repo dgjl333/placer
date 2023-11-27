@@ -52,7 +52,6 @@ public class Placer : EditorWindow
     SerializedProperty propColor;
     SerializedProperty propKeepRootRotation;
 
-
     private PrefabInfo prefabInfo;
     private Pose hitPoint;
     private List<Pose> poseList = new List<Pose>();
@@ -81,6 +80,11 @@ public class Placer : EditorWindow
         public GameObject originalPrefab;
         public bool hasCollider;
         public List<GameObject> cachedAllInstancedInScene;
+
+        public bool RequireList()
+        {
+            return !(hasCollider || originalPrefab == null);
+        }
     }
 
     private struct PointWithOrientation
@@ -165,13 +169,25 @@ public class Placer : EditorWindow
         {
             on = !on;
             currentText = on ? deactivateText : activateText;
+            if (on)
+            {
+                OnTurnOn();
+            }
         }
         GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();
         if (on)
         {
             GUILayout.Space(15);
+            EditorGUI.BeginChangeCheck();
             mode = (Mode)GUILayout.Toolbar((int)mode, toolIcons);
+            if (EditorGUI.EndChangeCheck())
+            {
+                if (mode == Mode.Delete)
+                {
+                    OnDeleteMode();
+                }
+            }
             GUILayout.Space(20);
             if (mode == Mode.Scatter)
             {
@@ -451,7 +467,7 @@ public class Placer : EditorWindow
 
     private void DeleteModeInputCheck()
     {
-        if (shift && Event.current.isMouse && Event.current.type == EventType.MouseDown)
+        if (shift && Event.current.isMouse && Event.current.type == EventType.MouseDown && Event.current.button == 0)
         {
             if (prefabInfo.originalPrefab != null)
             {
@@ -804,21 +820,20 @@ public class Placer : EditorWindow
     {
         int segments = 63;
         Vector3[] points = new Vector3[segments];
+        Vector3 forward = Vector3.Cross(hit.normal, Vector3.up).normalized;
+        if (forward.sqrMagnitude < 0.001f)
+        {
+            forward = Vector3.Cross(hit.normal, Vector3.right).normalized;
+        }
+        Vector3 right = Vector3.Cross(forward, hit.normal);
         for (int i = 0; i < segments; i++)
         {
             float t = i / (float)segments;
             float angle = 2 * Mathf.PI * t;
             Vector2 pointLS = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
-            Vector3 forward = Vector3.Cross(hit.normal, Vector3.up).normalized;
-            if (forward.sqrMagnitude < 0.001f)
-            {
-                forward = Vector3.Cross(hit.normal, Vector3.right).normalized;
-            }
-            Vector3 right = Vector3.Cross(forward, hit.normal);
             Vector3 pointWS = GetWorldPosFromLocal(pointLS, hit.point, forward, hit.normal, right, radius);
             points[i] = pointWS;
         }
-
         Vector3?[] surfaceHits = new Vector3?[segments + 1];
         float raycastOffset = GetRaycastOffset();
         float raycastmaxDistance = GetRaycastMaxDistance();
@@ -986,15 +1001,31 @@ public class Placer : EditorWindow
             UpdateDeletionObjectsList();
         }
     }
-
-    private void OnHierarchyChanged()
-    {
-        if (prefabInfo.originalPrefab == null || prefabInfo.hasCollider || isInPrefabMode) return;
-        UpdateDeletionObjectsList();
-    }
-
     private void UpdateDeletionObjectsList()
     {
         prefabInfo.cachedAllInstancedInScene = FindAllInstancesOfPrefab(prefabInfo.originalPrefab);
     }
+
+    private void OnTurnOn()
+    {
+        if (prefabInfo.RequireList() && mode == Mode.Delete)
+        {
+            UpdateDeletionObjectsList();
+        }
+    }
+
+    private void OnDeleteMode()
+    {
+        if (prefabInfo.RequireList())
+        {
+            UpdateDeletionObjectsList();
+        }
+    }
+
+    private void OnHierarchyChanged()
+    {
+        if (!on || mode != Mode.Delete || !prefabInfo.RequireList()) return;
+        UpdateDeletionObjectsList();
+    }
+
 }
