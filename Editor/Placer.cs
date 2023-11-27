@@ -9,7 +9,6 @@ using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 public class Placer : EditorWindow
-
 {
     [MenuItem("Tools/Placer")]
     public static void OpenWindow()
@@ -27,9 +26,9 @@ public class Placer : EditorWindow
     public float randAngle = 180f;
     public bool randomScale = false;
     public float scaleRange = 0.1f;
-    public Color radiusColor = new Color(0.866f, 0.160f, 0.498f, 1f);
     public float heightOffset = 0f;
     public bool keepRootRotation = false;
+    public Color radiusColor = new Color(0.866f, 0.160f, 0.498f, 1f);
     public Mode mode = Mode.Scatter;
 
     public GameObject prefab;
@@ -56,9 +55,9 @@ public class Placer : EditorWindow
 
     private PrefabInfo prefabInfo;
     private Pose hitPoint;
-    private float[] randValues;
     private List<Pose> poseList = new List<Pose>();
     private RandPoints randPoints;
+    private float[] randValues;
     private bool showPreviewSetting = false;
     private bool shift = false;
     private bool ctrl = false;
@@ -68,9 +67,7 @@ public class Placer : EditorWindow
     private string deactivateText = "Deactivate";
     private string currentText;
     private float GizmoWidth = 3.5f;
-
     private int controlID;
-
     private readonly float minRadius = 0f;
     private readonly float maxRadius = 50f;
     private readonly float minOffset = -5f;
@@ -85,7 +82,6 @@ public class Placer : EditorWindow
         public bool hasCollider;
         public List<GameObject> cachedAllInstancedInScene;
     }
-
 
     private struct PointWithOrientation
     {
@@ -262,8 +258,6 @@ public class Placer : EditorWindow
 
         if (so.ApplyModifiedProperties())
         {
-            Debug.Log(000);
-
             SceneView.RepaintAll();
         }
         if (Event.current.type == EventType.MouseDown && Event.current.button == 0)   //unfocus the window when click elsewhere
@@ -271,7 +265,6 @@ public class Placer : EditorWindow
             GUI.FocusControl(null);
             Repaint();
         }
-
     }
 
     private void DuringSceneGUI(SceneView scene)
@@ -430,7 +423,7 @@ public class Placer : EditorWindow
                 {
                     PointWithOrientation pointInfo = new PointWithOrientation(hit.point, hitTangent, hitNormal);
                     pointList.Add(pointInfo);
-                    //DrawAxisGizmo(hit.point, hitTangent, hitNormal, hitBitangent);
+                    DrawAxisGizmo(hit.point, hitTangent, hitNormal, hitBitangent);
                 }
                 break;
             default:
@@ -635,8 +628,7 @@ public class Placer : EditorWindow
     private List<GameObject> GetObjectsInDeletionRange()
     {
         List<GameObject> objsList = new List<GameObject>();
-        bool hasCollider = (prefabInfo.originalPrefab.GetComponent<Collider>() != null);
-        if (hasCollider)
+        if (prefabInfo.hasCollider)
         {
             Collider[] colliders = Physics.OverlapSphere(hitPoint.position, deletionRadius);
             foreach (Collider c in colliders)
@@ -650,21 +642,20 @@ public class Placer : EditorWindow
                     }
                 }
             }
-            return objsList;
         }
         else
         {
-            List<GameObject> objs = FindAllInstancesOfPrefab(prefabInfo.originalPrefab);
-            foreach (GameObject o in objs)
+            foreach (GameObject o in prefabInfo.cachedAllInstancedInScene)
             {
+                if (o == null) continue;   // prevent error when deleting 
                 float distance = Vector3.Distance(o.transform.position, hitPoint.position);
                 if (distance < deletionRadius && IsWithinDeletionHeightRange(o))
                 {
                     objsList.Add(o);
                 }
             }
-            return objsList;
         }
+        return objsList;
     }
 
     private List<GameObject> FindAllInstancesOfPrefab(GameObject prefab)
@@ -843,7 +834,6 @@ public class Placer : EditorWindow
                 surfaceHits[i] = null;
             }
         }
-
         for (int i = 0; i < segments; i++)  //connect last element to first
         {
             if (surfaceHits[i] != null)
@@ -946,7 +936,7 @@ public class Placer : EditorWindow
 
     private void LoadAssets(bool forceReload)
     {
-        if (forceReload || previewMaterial == null || deletionMaterial == null || toolIcons == null)
+        if (forceReload || previewMaterial == null || deletionMaterial == null || toolIcons == null || TypeErrorCheck())
         {
             string path = Path.GetDirectoryName(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(this)));
             string parentPath = Path.GetDirectoryName(path);
@@ -960,6 +950,11 @@ public class Placer : EditorWindow
                 new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/snap.png", typeof(Texture)),"None"),
             };
         }
+    }
+
+    private bool TypeErrorCheck()
+    {
+        return previewMaterial.GetType() != typeof(Material) || deletionMaterial.GetType() != typeof(Material);
     }
 
     private void LoadData()
@@ -980,16 +975,26 @@ public class Placer : EditorWindow
         if (obj != null)
         {
             prefabInfo.originalPrefab = PrefabUtility.GetCorrespondingObjectFromOriginalSource(obj);
+            prefabInfo.hasCollider = (prefabInfo.originalPrefab.GetComponent<Collider>() != null);
         }
         else
         {
             prefabInfo.originalPrefab = null;
         }
-        prefabInfo.hasCollider = (prefabInfo.originalPrefab.GetComponent<Collider>() != null);
+        if (!prefabInfo.hasCollider && prefabInfo.originalPrefab != null)
+        {
+            UpdateDeletionObjectsList();
+        }
     }
 
     private void OnHierarchyChanged()
     {
         if (prefabInfo.originalPrefab == null || prefabInfo.hasCollider || isInPrefabMode) return;
+        UpdateDeletionObjectsList();
+    }
+
+    private void UpdateDeletionObjectsList()
+    {
+        prefabInfo.cachedAllInstancedInScene = FindAllInstancesOfPrefab(prefabInfo.originalPrefab);
     }
 }
