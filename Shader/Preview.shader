@@ -13,6 +13,7 @@ Shader "Custom/Preview"
         Tags { "RenderType"="Transparent" "Queue+4000" = "Transparent" }
         Blend SrcAlpha OneMinusSrcAlpha
 		ZTest Always
+		ZWrite Off
 
 		Pass
 		{

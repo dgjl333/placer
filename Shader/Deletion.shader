@@ -13,6 +13,7 @@
 
         Blend SrcAlpha OneMinusSrcAlpha
         ZTest Always
+        ZWrite Off
 
         Pass
         {
