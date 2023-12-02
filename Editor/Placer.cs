@@ -25,16 +25,17 @@ public class Placer : EditorWindow
     public bool randomRotation = false;
     public float randAngle = 180f;
     public bool randomScale = false;
-    public float scaleRange = 0.1f;
+    public float scaleMin = 0.9f;
+    public float scaleMax = 1.1f;
     public float heightOffset = 0f;
     public bool keepRootRotation = false;
     public Color radiusColor = new Color(0.866f, 0.160f, 0.498f, 1f);
     public Mode mode = Mode.Scatter;
 
-    public GameObject prefab;
-    public Material previewMaterial;
-    public Material deletionMaterial;
-    public GUIContent[] toolIcons;
+    private GameObject prefab;
+    private Material previewMaterial;
+    private Material deletionMaterial;
+    private GUIContent[] toolIcons;
 
     SerializedObject so;
     SerializedProperty propRadius;
@@ -42,15 +43,16 @@ public class Placer : EditorWindow
     SerializedProperty propSpacing;
     SerializedProperty propDeletionRadius;
     SerializedProperty propSpawnCount;
-    SerializedProperty propPrefab;
     SerializedProperty propHeightOffset;
-    SerializedProperty propRandomRotation;
+    SerializedProperty propRandRotation;
     SerializedProperty propRandAngle;
-    SerializedProperty propScaleRange;
-    SerializedProperty propRandomScale;
+    SerializedProperty propRandScale;
+    SerializedProperty propScaleMin;
+    SerializedProperty propScaleMax;
     SerializedProperty propColor;
     SerializedProperty propKeepRootRotation;
 
+    [SerializeField] private string prefabLocation = null;
     [SerializeField] private string currentText;
     private Pose hitPoint;
     private List<Pose> poseList = new List<Pose>();
@@ -62,7 +64,6 @@ public class Placer : EditorWindow
     private bool ctrl = false;
     private bool alt = false;
     private bool isInPrefabMode = false;
-    private bool isInit = true;
     private string activateText = "Activate";
     private string deactivateText = "Deactivate";
     private float GizmoWidth = 3.5f;
@@ -71,6 +72,8 @@ public class Placer : EditorWindow
     private readonly float maxRadius = 50f;
     private readonly float minOffset = -5f;
     private readonly float maxOffset = 5f;
+
+    private bool isPrefabValid = true;
 
     private struct PrefabInfo
     {
@@ -98,7 +101,7 @@ public class Placer : EditorWindow
         }
     }
 
-    public struct RandPoints
+    private struct RandPoints
     {
         public List<Vector2> points;
         public float minDistance;
@@ -112,8 +115,15 @@ public class Placer : EditorWindow
         None
     }
 
+    private void Awake()
+    {
+        LoadData();
+        LoadPrefab();   
+    }
+
     private void OnEnable()
     {
+        LoadAssets();
         EditorApplication.hierarchyChanged += OnHierarchyChanged;
         SceneView.duringSceneGui += DuringSceneGUI;
         GetProperties();
@@ -121,12 +131,7 @@ public class Placer : EditorWindow
         GenerateRandValues();
         currentText = on ? deactivateText : activateText;
         controlID = GUIUtility.GetControlID(FocusType.Passive);
-
-        LoadData();
-        LoadAssets();
-
-        UpdatePrefabInfo(isInit);
-        isInit = false;
+        UpdatePrefabInfo();
     }
 
     private void OnDisable()
@@ -142,13 +147,13 @@ public class Placer : EditorWindow
         propRadius = so.FindProperty(nameof(spawnRadius));
         propDeletionRadius = so.FindProperty(nameof(deletionRadius));
         propSpawnCount = so.FindProperty(nameof(spawnCount));
-        propPrefab = so.FindProperty(nameof(prefab));
-        propRandomRotation = so.FindProperty(nameof(randomRotation));
+        propRandRotation = so.FindProperty(nameof(randomRotation));
         propColor = so.FindProperty(nameof(radiusColor));
         propHeightOffset = so.FindProperty(nameof(heightOffset));
-        propScaleRange = so.FindProperty(nameof(scaleRange));
+        propScaleMin = so.FindProperty(nameof(scaleMin));
+        propScaleMax = so.FindProperty(nameof(scaleMax));
         propKeepRootRotation = so.FindProperty(nameof(keepRootRotation));
-        propRandomScale = so.FindProperty(nameof(randomScale));
+        propRandScale = so.FindProperty(nameof(randomScale));
         propSpacing = so.FindProperty(nameof(spacing));
         propRandAngle = so.FindProperty(nameof(randAngle));
         propRotationOffset = so.FindProperty(nameof(rotationOffset));
@@ -218,25 +223,43 @@ public class Placer : EditorWindow
                     propDeletionRadius.floatValue = newRadius;
                 }
             }
-
             EditorGUILayout.PropertyField(propHeightOffset);
             if (mode != Mode.None)
             {
                 EditorGUI.BeginChangeCheck();
-                EditorGUILayout.PropertyField(propPrefab);
+                prefab = (GameObject)EditorGUILayout.ObjectField("prefab", prefab, typeof(GameObject), true);
+                if (prefab != null)
+                {
+                    isPrefabValid = true;
+                    GameObject obj = PrefabUtility.GetCorrespondingObjectFromOriginalSource(prefab);   //get source object from the field
+                    if (obj != null)
+                    {
+                        prefab = obj;
+                    }
+                    else
+                    {
+                        prefab = null;
+                        isPrefabValid = false;
+                    }
+                }
                 if (EditorGUI.EndChangeCheck())
                 {
-                    UpdatePrefabInfo(false);
+                    UpdatePrefabInfo();
+                }
+                if (!isPrefabValid)
+                {
+                    EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                    EditorGUILayout.LabelField("Object must be an instance of prefab", EditorStyles.wordWrappedMiniLabel);
+                    EditorGUILayout.EndVertical();
                 }
             }
-
             GUILayout.Space(15);
             if (mode == Mode.Scatter || mode == Mode.Place)
             {
                 EditorGUILayout.PropertyField(propRotationOffset);
                 propRotationOffset.floatValue = Mathf.Clamp(propRotationOffset.floatValue, 0f, 360f);
                 EditorGUILayout.PropertyField(propKeepRootRotation);
-                EditorGUILayout.PropertyField(propRandomRotation);
+                EditorGUILayout.PropertyField(propRandRotation);
                 if (randomRotation)
                 {
                     EditorGUI.indentLevel++;
@@ -245,16 +268,14 @@ public class Placer : EditorWindow
                     EditorGUI.indentLevel--;
                 }
                 EditorGUILayout.Space(10);
-                EditorGUILayout.PropertyField(propRandomScale);
+                EditorGUILayout.PropertyField(propRandScale);
                 if (randomScale)
                 {
                     EditorGUI.indentLevel++;
-                    EditorGUI.BeginChangeCheck();
-                    float newScale = EditorGUILayout.Slider("Influence", propScaleRange.floatValue, 0f, 1f);
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        propScaleRange.floatValue = newScale;
-                    }
+                    EditorGUILayout.PropertyField(propScaleMin);
+                    propScaleMin.floatValue = Mathf.Max(0.01f, propScaleMin.floatValue);
+                    EditorGUILayout.PropertyField(propScaleMax);
+                    propScaleMax.floatValue = Mathf.Max(0.01f, propScaleMax.floatValue);
                     EditorGUI.indentLevel--;
                 }
             }
@@ -270,7 +291,7 @@ public class Placer : EditorWindow
         {
             SceneView.RepaintAll();
         }
-        if (Event.current.type == EventType.MouseDown && Event.current.button == 0)   //unfocus the window when click elsewhere
+        if (Event.current.type == EventType.MouseDown && Event.current.button == 0)   //unfocus the window when click elsewhere 
         {
             GUI.FocusControl(null);
             Repaint();
@@ -323,39 +344,37 @@ public class Placer : EditorWindow
     private void RaycastToMousePosition(List<PointWithOrientation> pointList, Camera cam, bool isSnappedMode)
     {
         Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
-        if (Physics.Raycast(ray, out RaycastHit hit))
+        if (!Physics.Raycast(ray, out RaycastHit hit)) return;
+        RaycastHit finalHit = hit;
+        if (!isSnappedMode) //non snap mode
         {
-            RaycastHit finalHit = hit;
-            if (!isSnappedMode) //non snap mode
+            switch (mode)
             {
-                switch (mode)
-                {
-                    case Mode.Delete:
-                        if (IsObjectFromPrefab(hit.collider.gameObject, prefabInfo.originalPrefab))
-                        {
-                            RaycastHit[] hits = Physics.RaycastAll(ray);
-                            RaycastHit? finalHitNullable = GetValidHitExcludingSamePrefab(hits);
-                            finalHit = finalHitNullable ?? finalHit;
-                        }
-                        HandleModeSpecificActions(finalHit, pointList, cam);
-                        break;
-                    default:
-                        HandleModeSpecificActions(finalHit, pointList, cam);
-                        break;
-                }
+                case Mode.Delete:
+                    if (IsObjectFromPrefab(hit.collider.gameObject, prefabInfo.originalPrefab))
+                    {
+                        RaycastHit[] hits = Physics.RaycastAll(ray);
+                        RaycastHit? finalHitNullable = GetValidHitExcludingSamePrefab(hits);
+                        finalHit = finalHitNullable ?? finalHit;
+                    }
+                    HandleModeSpecificActions(finalHit, pointList, cam);
+                    break;
+                default:
+                    HandleModeSpecificActions(finalHit, pointList, cam);
+                    break;
             }
-            else //exclude self
+        }
+        else //exclude self
+        {
+            GameObject[] objs = Selection.gameObjects;
+            bool isFromObject = objs.Any(o => IsFromObject(hit.collider.gameObject, o));
+            if (isFromObject)
             {
-                GameObject[] objs = Selection.gameObjects;
-                bool isFromObject = objs.Any(o => IsFromObject(hit.collider.gameObject, o));
-                if (isFromObject)
-                {
-                    RaycastHit[] hits = Physics.RaycastAll(ray);
-                    RaycastHit? finalHitNullable = GetValidHitExcludingObjects(hits, objs);
-                    finalHit = finalHitNullable ?? finalHit;
-                }
-                HandleModeSpecificActions(finalHit, pointList, cam);
+                RaycastHit[] hits = Physics.RaycastAll(ray);
+                RaycastHit? finalHitNullable = GetValidHitExcludingObjects(hits, objs);
+                finalHit = finalHitNullable ?? finalHit;
             }
+            HandleModeSpecificActions(finalHit, pointList, cam);
         }
     }
 
@@ -671,6 +690,7 @@ public class Placer : EditorWindow
         }
         return objsList;
     }
+
     private List<GameObject> FindAllInstancesOfPrefab(GameObject prefab)
     {
         List<GameObject> foundInstances = new List<GameObject>();
@@ -720,9 +740,8 @@ public class Placer : EditorWindow
             Matrix4x4 outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
             if (randScale)
             {
-                float scale = GetRandValue(randScaleIndex) * 2 - 1;
-                scale *= scaleRange;
-                outputMatrix = outputMatrix * Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * (1 + scale));
+                float scale = GetRandomScale(randScaleIndex);
+                outputMatrix = outputMatrix * Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * scale);
             }
             Graphics.DrawMeshNow(mesh, outputMatrix);
         }
@@ -750,9 +769,8 @@ public class Placer : EditorWindow
             spawnObject.transform.rotation = keepRootRotation ? poseList[i].rotation * prefabInfo.originalPrefab.transform.rotation : poseList[i].rotation;
             if (randomScale)
             {
-                float scale = GetRandValue(i) * 2 - 1; //-1 ~ 1
-                scale *= scaleRange;
-                spawnObject.transform.localScale = spawnObject.transform.localScale * (1 + scale);
+                float scale = GetRandomScale(i);
+                spawnObject.transform.localScale = spawnObject.transform.localScale * scale;
             }
         }
         GenerateRandPoints();
@@ -788,6 +806,12 @@ public class Placer : EditorWindow
             retryCount = 0;
             randPoints.points.Add(newPoint);
         }
+    }
+
+    private float GetRandomScale(int index)
+    {
+        float rand = GetRandValue(index);
+        return Mathf.Lerp(scaleMin, scaleMax, rand);
     }
 
     private bool IsPointValid(Vector2 point)
@@ -952,13 +976,33 @@ public class Placer : EditorWindow
         string parentPath = Path.GetDirectoryName(path);
         previewMaterial = (Material)AssetDatabase.LoadAssetAtPath(parentPath + "/Material/Preview.mat", typeof(Material));
         deletionMaterial = (Material)AssetDatabase.LoadAssetAtPath(parentPath + "/Material/Deletion.mat", typeof(Material));
-        toolIcons = new GUIContent[]
+        bool isDarkTheme = EditorGUIUtility.isProSkin;
+        if (isDarkTheme)
         {
-            new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/brush.png", typeof(Texture)),"Scatter"),
-            new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/pen.png", typeof(Texture)),"Place"),
-            new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/rubber.png", typeof(Texture)),"Delete"),
-            new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/snap.png", typeof(Texture)),"None"),
-        };
+            toolIcons = new GUIContent[]
+            {
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/brush_dark.png", typeof(Texture)),"Scatter"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/pen_dark.png", typeof(Texture)),"Place"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/rubber_dark.png", typeof(Texture)),"Delete"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/snap_dark.png", typeof(Texture)),"None"),
+            };
+        }
+        else
+        {
+            toolIcons = new GUIContent[]
+            {
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/brush_light.png", typeof(Texture)),"Scatter"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/pen_light.png", typeof(Texture)),"Place"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/rubber_light.png", typeof(Texture)),"Delete"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/snap_light.png", typeof(Texture)),"None"),
+            };
+        }
+    }
+
+    private void LoadPrefab()
+    {
+        if (prefabLocation == null) return;
+        prefab = (GameObject)AssetDatabase.LoadAssetAtPath(prefabLocation, typeof(GameObject));
     }
 
     private void LoadData()
@@ -973,17 +1017,18 @@ public class Placer : EditorWindow
         EditorPrefs.SetString(this.GetType().ToString(), data);
     }
 
-    private void UpdatePrefabInfo(bool isInit)
+    private void UpdatePrefabInfo()
     {
-        GameObject obj = isInit ? prefab : (GameObject)propPrefab.objectReferenceValue;  //objectreference becommes null when start up
-        if (obj != null)
+        if (prefab != null)
         {
-            prefabInfo.originalPrefab = PrefabUtility.GetCorrespondingObjectFromOriginalSource(obj);
+            prefabInfo.originalPrefab = prefab;
             prefabInfo.hasCollider = (prefabInfo.originalPrefab.GetComponent<Collider>() != null);
+            prefabLocation = AssetDatabase.GetAssetPath(prefab);
         }
         else
         {
             prefabInfo.originalPrefab = null;
+            prefabLocation = null;
         }
         if (!prefabInfo.hasCollider && prefabInfo.originalPrefab != null)
         {
