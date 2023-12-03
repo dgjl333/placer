@@ -1,0 +1,19 @@
+Key,ENG,JP
+KActivate,Activate,オン
+KDeactivate,Deactivate,オフ
+KScatter,Scatter,散布
+KPlace,Place,配置
+KDelete,Delete,削除
+KSnap,Snap,スナップ
+KRadius,Radius,半径
+KSpawnCount,Spawn Count,生成数
+KMinSpacing,Min Spacing,最小間隔
+KHeightOffset,Height Offset,高さオフセット
+KPrefab,Prefab,プレハブ
+KRotationOffset,Rotation Offset,回転オフセット
+KRootRotation,Keep Root Rotation,ルート回転保持
+KRandRotation,Random Rotation,ランダム回転
+KEulerAngle,Euler Angle,オイラー角
+KRandScale,Random Scale,ランダムスケール
+KMinScale,Min Scale,最小スケール
+KMaxScale,Max Scale,最大スケール

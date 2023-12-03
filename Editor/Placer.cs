@@ -64,8 +64,8 @@ public class Placer : EditorWindow
     private bool ctrl = false;
     private bool alt = false;
     private bool isInPrefabMode = false;
-    private string activateText = "Activate";
-    private string deactivateText = "Deactivate";
+    private string activateText;
+    private string deactivateText;
     private float GizmoWidth = 3.5f;
     private int controlID;
     private readonly float minRadius = 0f;
@@ -112,17 +112,21 @@ public class Placer : EditorWindow
         Scatter,
         Place,
         Delete,
-        None
+        Snap
     }
 
     private void Awake()
     {
+        LanguageSetting.path = GetPath();
+        LanguageSetting.LoadTexts();
         LoadData();
-        LoadPrefab();   
+        LoadPrefab();
+        InitText();
     }
 
     private void OnEnable()
     {
+        ErrorCheck();
         LoadAssets();
         EditorApplication.hierarchyChanged += OnHierarchyChanged;
         SceneView.duringSceneGui += DuringSceneGUI;
@@ -183,6 +187,7 @@ public class Placer : EditorWindow
             mode = (Mode)GUILayout.Toolbar((int)mode, toolIcons);
             if (EditorGUI.EndChangeCheck())
             {
+                LanguageSetting.LoadTexts();
                 if (mode == Mode.Delete)
                 {
                     OnDeleteMode();
@@ -192,14 +197,14 @@ public class Placer : EditorWindow
             if (mode == Mode.Scatter)
             {
                 EditorGUI.BeginChangeCheck();
-                float newRadius = EditorGUILayout.Slider("Radius", propRadius.floatValue, minRadius, maxRadius);
+                float newRadius = EditorGUILayout.Slider(GetText("KRadius"), propRadius.floatValue, minRadius, maxRadius);
                 if (EditorGUI.EndChangeCheck())
                 {
                     propRadius.floatValue = newRadius;
                     ValidateRandPoints();
                 }
                 EditorGUI.BeginChangeCheck();
-                int newSpawnCount = EditorGUILayout.IntSlider("Spawn Count", propSpawnCount.intValue, 1, 50);
+                int newSpawnCount = EditorGUILayout.IntSlider(GetText("KSpawnCount"), propSpawnCount.intValue, 1, 50);
                 if (EditorGUI.EndChangeCheck())
                 {
                     propSpawnCount.intValue = newSpawnCount;
@@ -207,7 +212,7 @@ public class Placer : EditorWindow
                     GenerateRandPoints();
                 }
                 EditorGUI.BeginChangeCheck();
-                EditorGUILayout.PropertyField(propSpacing);
+                EditorGUILayout.PropertyField(propSpacing, new GUIContent(GetText("KMinSpacing")));
                 propSpacing.floatValue = Mathf.Max(0f, propSpacing.floatValue);
                 if (EditorGUI.EndChangeCheck())
                 {
@@ -217,17 +222,17 @@ public class Placer : EditorWindow
             else if (mode == Mode.Delete)
             {
                 EditorGUI.BeginChangeCheck();
-                float newRadius = EditorGUILayout.Slider("Radius", propDeletionRadius.floatValue, minRadius, maxRadius);
+                float newRadius = EditorGUILayout.Slider(GetText("KRadius"), propDeletionRadius.floatValue, minRadius, maxRadius);
                 if (EditorGUI.EndChangeCheck())
                 {
                     propDeletionRadius.floatValue = newRadius;
                 }
             }
-            EditorGUILayout.PropertyField(propHeightOffset);
-            if (mode != Mode.None)
+            EditorGUILayout.PropertyField(propHeightOffset, new GUIContent(GetText("KHeightOffset")));
+            if (mode != Mode.Snap)
             {
                 EditorGUI.BeginChangeCheck();
-                prefab = (GameObject)EditorGUILayout.ObjectField("prefab", prefab, typeof(GameObject), true);
+                prefab = (GameObject)EditorGUILayout.ObjectField(GetText("KPrefab"), prefab, typeof(GameObject), true);
                 if (prefab != null)
                 {
                     isPrefabValid = true;
@@ -249,42 +254,42 @@ public class Placer : EditorWindow
                 if (!isPrefabValid)
                 {
                     EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                    EditorGUILayout.LabelField("Object must be an instance of prefab", EditorStyles.wordWrappedMiniLabel);
+                    EditorGUILayout.LabelField("Object must be an instance of a prefab", EditorStyles.wordWrappedMiniLabel);
                     EditorGUILayout.EndVertical();
                 }
             }
             GUILayout.Space(15);
             if (mode == Mode.Scatter || mode == Mode.Place)
             {
-                EditorGUILayout.PropertyField(propRotationOffset);
+                EditorGUILayout.PropertyField(propRotationOffset, new GUIContent(GetText("KRotationOffset")));
                 propRotationOffset.floatValue = Mathf.Clamp(propRotationOffset.floatValue, 0f, 360f);
-                EditorGUILayout.PropertyField(propKeepRootRotation);
-                EditorGUILayout.PropertyField(propRandRotation);
+                EditorGUILayout.PropertyField(propKeepRootRotation, new GUIContent(GetText("KRootRotation")));
+                EditorGUILayout.PropertyField(propRandRotation, new GUIContent(GetText("KRandRotation")));
                 if (randomRotation)
                 {
                     EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(propRandAngle, new GUIContent("Euler Angle"));
+                    EditorGUILayout.PropertyField(propRandAngle, new GUIContent(GetText("KEulerAngle")));
                     propRandAngle.floatValue = Mathf.Clamp(propRandAngle.floatValue, 0f, 360f);
                     EditorGUI.indentLevel--;
                 }
                 EditorGUILayout.Space(10);
-                EditorGUILayout.PropertyField(propRandScale);
+                EditorGUILayout.PropertyField(propRandScale, new GUIContent(GetText("KRandScale")));
                 if (randomScale)
                 {
                     EditorGUI.indentLevel++;
-                    EditorGUILayout.PropertyField(propScaleMin);
+                    EditorGUILayout.PropertyField(propScaleMin, new GUIContent(GetText("KMinScale")));
                     propScaleMin.floatValue = Mathf.Max(0.01f, propScaleMin.floatValue);
-                    EditorGUILayout.PropertyField(propScaleMax);
+                    EditorGUILayout.PropertyField(propScaleMax, new GUIContent(GetText("KMaxScale")));
                     propScaleMax.floatValue = Mathf.Max(0.01f, propScaleMax.floatValue);
                     EditorGUI.indentLevel--;
                 }
             }
             GUILayout.Space(20);
-            showPreviewSetting = EditorGUILayout.Foldout(showPreviewSetting, "Preview Setting");
-            if (showPreviewSetting)
-            {
-                EditorGUILayout.PropertyField(propColor);
-            }
+            //showPreviewSetting = EditorGUILayout.Foldout(showPreviewSetting, "Preview Setting");
+            //if (showPreviewSetting)
+            //{
+            //    EditorGUILayout.PropertyField(propColor);
+            //}
         }
 
         if (so.ApplyModifiedProperties())
@@ -311,7 +316,7 @@ public class Placer : EditorWindow
         }
 
         KeyModifierCheck();
-        if (mode != Mode.None || ctrl)
+        if (mode != Mode.Snap || ctrl)
         {
             RaycastToMousePosition(pointList, scene.camera, isSnappedMode);
         }
@@ -514,7 +519,7 @@ public class Placer : EditorWindow
         if (Event.current.isMouse && Event.current.type == EventType.MouseDown && Event.current.button == 0) //left click
         {
             SpawnPrefabs(poseList);
-            if (mode != Mode.None)
+            if (mode != Mode.Snap)
             {
                 GUIUtility.hotControl = controlID;
             }
@@ -972,29 +977,28 @@ public class Placer : EditorWindow
 
     private void LoadAssets()
     {
-        string path = Path.GetDirectoryName(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(this)));
-        string parentPath = Path.GetDirectoryName(path);
-        previewMaterial = (Material)AssetDatabase.LoadAssetAtPath(parentPath + "/Material/Preview.mat", typeof(Material));
-        deletionMaterial = (Material)AssetDatabase.LoadAssetAtPath(parentPath + "/Material/Deletion.mat", typeof(Material));
+        string path = GetPath();
+        previewMaterial = (Material)AssetDatabase.LoadAssetAtPath(path + "/Material/Preview.mat", typeof(Material));
+        deletionMaterial = (Material)AssetDatabase.LoadAssetAtPath(path + "/Material/Deletion.mat", typeof(Material));
         bool isDarkTheme = EditorGUIUtility.isProSkin;
         if (isDarkTheme)
         {
             toolIcons = new GUIContent[]
             {
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/brush_dark.png", typeof(Texture)),"Scatter"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/pen_dark.png", typeof(Texture)),"Place"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/rubber_dark.png", typeof(Texture)),"Delete"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/snap_dark.png", typeof(Texture)),"None"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/brush_dark.png", typeof(Texture)),"Scatter"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/pen_dark.png", typeof(Texture)),"Place"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/rubber_dark.png", typeof(Texture)),"Delete"),    
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/snap_dark.png", typeof(Texture)),"None"),
             };
         }
         else
         {
             toolIcons = new GUIContent[]
             {
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/brush_light.png", typeof(Texture)),"Scatter"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/pen_light.png", typeof(Texture)),"Place"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/rubber_light.png", typeof(Texture)),"Delete"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(parentPath + "/Texture/snap_light.png", typeof(Texture)),"None"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/brush_light.png", typeof(Texture)),"Scatter"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/pen_light.png", typeof(Texture)),"Place"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/rubber_light.png", typeof(Texture)),"Delete"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/snap_light.png", typeof(Texture)),"None"),
             };
         }
     }
@@ -1063,4 +1067,30 @@ public class Placer : EditorWindow
         UpdateDeletionObjectsList();
     }
 
+    private string GetPath()
+    {
+        string path = Path.GetDirectoryName(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(this)));
+        string parentPath = Path.GetDirectoryName(path);
+        return parentPath;
+    }
+
+    private string GetText(string key) => LanguageSetting.GetText(key);
+
+    private void ErrorCheck()
+    {
+        if (string.IsNullOrEmpty(LanguageSetting.path))
+        {
+            LanguageSetting.path = GetPath();
+        }
+        if (string.IsNullOrEmpty(activateText))
+        {
+            InitText();
+        }
+    }
+
+    private void InitText()
+    {
+        activateText = GetText("KActivate");
+        deactivateText = GetText("KDeactivate");
+    }
 }
