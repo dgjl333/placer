@@ -53,7 +53,6 @@ public class Placer : EditorWindow
     SerializedProperty propKeepRootRotation;
 
     [SerializeField] private string prefabLocation = null;
-    [SerializeField] private string currentText;
     private Pose hitPoint;
     private List<Pose> poseList = new List<Pose>();
     private RandPoints randPoints;
@@ -64,8 +63,6 @@ public class Placer : EditorWindow
     private bool ctrl = false;
     private bool alt = false;
     private bool isInPrefabMode = false;
-    private string activateText;
-    private string deactivateText;
     private float GizmoWidth = 3.5f;
     private int controlID;
     private readonly float minRadius = 0f;
@@ -117,23 +114,19 @@ public class Placer : EditorWindow
 
     private void Awake()
     {
-        LanguageSetting.path = GetPath();
-        LanguageSetting.LoadTexts();
         LoadData();
         LoadPrefab();
-        InitText();
+        LoadAssets();
     }
 
     private void OnEnable()
     {
-        ErrorCheck();
         LoadAssets();
         EditorApplication.hierarchyChanged += OnHierarchyChanged;
         SceneView.duringSceneGui += DuringSceneGUI;
         GetProperties();
         GenerateRandPoints();
         GenerateRandValues();
-        currentText = on ? deactivateText : activateText;
         controlID = GUIUtility.GetControlID(FocusType.Passive);
         UpdatePrefabInfo();
     }
@@ -169,10 +162,10 @@ public class Placer : EditorWindow
         GUILayout.Space(10);
         GUILayout.BeginHorizontal();
         GUILayout.FlexibleSpace();
+        string currentText = on ? GetText("KDeactivate") : GetText("KActivate");
         if (GUILayout.Button(currentText, GUILayout.MaxWidth(230), GUILayout.Height(20)))
         {
             on = !on;
-            currentText = on ? deactivateText : activateText;
             if (on)
             {
                 OnTurnOn();
@@ -187,7 +180,6 @@ public class Placer : EditorWindow
             mode = (Mode)GUILayout.Toolbar((int)mode, toolIcons);
             if (EditorGUI.EndChangeCheck())
             {
-                LanguageSetting.LoadTexts();
                 if (mode == Mode.Delete)
                 {
                     OnDeleteMode();
@@ -489,12 +481,7 @@ public class Placer : EditorWindow
         {
             if (prefabInfo.originalPrefab != null)
             {
-                List<GameObject> deletingObjs = GetObjectsInDeletionRange();
-                foreach (GameObject o in deletingObjs)
-                {
-                    Undo.DestroyObjectImmediate(o);
-                }
-                Event.current.Use();
+                DeleteObjects();
             }
         }
     }
@@ -559,6 +546,16 @@ public class Placer : EditorWindow
             Event.current.Use();
             Repaint();
         }
+    }
+
+    private void DeleteObjects()
+    {
+        List<GameObject> deletingObjs = GetObjectsInDeletionRange();
+        foreach (GameObject o in deletingObjs)
+        {
+            Undo.DestroyObjectImmediate(o);
+        }
+        Event.current.Use();
     }
 
     private void AdjustOffset()
@@ -987,7 +984,7 @@ public class Placer : EditorWindow
             {
                 new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/brush_dark.png", typeof(Texture)),"Scatter"),
                 new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/pen_dark.png", typeof(Texture)),"Place"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/rubber_dark.png", typeof(Texture)),"Delete"),    
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/rubber_dark.png", typeof(Texture)),"Delete"),
                 new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/snap_dark.png", typeof(Texture)),"None"),
             };
         }
@@ -1076,21 +1073,4 @@ public class Placer : EditorWindow
 
     private string GetText(string key) => LanguageSetting.GetText(key);
 
-    private void ErrorCheck()
-    {
-        if (string.IsNullOrEmpty(LanguageSetting.path))
-        {
-            LanguageSetting.path = GetPath();
-        }
-        if (string.IsNullOrEmpty(activateText))
-        {
-            InitText();
-        }
-    }
-
-    private void InitText()
-    {
-        activateText = GetText("KActivate");
-        deactivateText = GetText("KDeactivate");
-    }
 }

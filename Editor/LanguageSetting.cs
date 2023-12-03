@@ -5,21 +5,28 @@ using System.Text;
 using UnityEditor;
 using UnityEngine;
 
-public class LanguageSetting
+public static class LanguageSetting
 {
-    public static string path;
+    private static string path;
     public enum Lanugage
     {
         ENG,
         JP
     }
-    private readonly static Dictionary<string, string> translations = new Dictionary<string, string>();
-    private static Lanugage lanugage = Lanugage.JP; 
 
-    public static void LoadTexts()
+    private static Dictionary<string, string> translations = new Dictionary<string, string>();
+    private static Lanugage lanugage = Lanugage.ENG; 
+
+    [InitializeOnLoadMethod]
+    private static void Init()
     {
-        string csvPath = path + "/Others/Language.csv";
-        using (StreamReader reader = new StreamReader(csvPath, Encoding.UTF8))
+        path = AssetDatabase.GUIDToAssetPath("9496dd598027c3047b8233228b4007cb");
+        LoadTexts();
+    }
+
+    private static void LoadTexts()
+    {
+        using (StreamReader reader = new StreamReader(path, Encoding.UTF8))
         {
             string[] firstLine = reader.ReadLine().Split(',');
             int langIndex = Array.IndexOf(firstLine, lanugage.ToString());
