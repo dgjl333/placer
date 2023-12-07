@@ -54,6 +54,7 @@ namespace Dg
         SerializedProperty propColor;
         SerializedProperty propKeepRootRotation;
 
+        private PrefabErrorMode prefabError = PrefabErrorMode.None;
         [SerializeField] private string prefabLocation = null;
         private Pose hitPoint;
         private List<Pose> poseList = new List<Pose>();
@@ -65,20 +66,20 @@ namespace Dg
         private bool ctrl = false;
         private bool alt = false;
         private bool isInPrefabMode = false;
-        private float GizmoWidth = 3.5f;
         private int controlID;
+
         private readonly float minRadius = 0f;
         private readonly float maxRadius = 50f;
         private readonly float minOffset = -5f;
         private readonly float maxOffset = 5f;
-
-        private bool isPrefabValid = true;
+        private readonly float GizmoWidth = 3.5f;
+        private readonly int discSegment = 64;
 
         private struct PrefabInfo
         {
             public GameObject originalPrefab;
-            public bool hasCollider; 
-            public List<GameObject> cachedAllInstancedInScene;
+            public bool hasCollider;
+            public IEnumerable<GameObject> cachedAllInstancedInScene;
             public bool requireList => !(hasCollider || originalPrefab == null);
         }
 
@@ -102,6 +103,13 @@ namespace Dg
             public float minDistance;
         }
 
+        public enum PrefabErrorMode
+        {
+            None,
+            NotAnPrefab,
+            NotOuterMostPrefab
+        }
+
         public enum Mode
         {
             Scatter,
@@ -110,8 +118,18 @@ namespace Dg
             Snap
         }
 
+        private Dictionary<PrefabErrorMode, string> errorTable = new Dictionary<PrefabErrorMode, string>()
+        {
+            { PrefabErrorMode.NotAnPrefab, "KNotPrefabError" },
+            { PrefabErrorMode.NotOuterMostPrefab, "KNotOuterMostPrefabError" }
+        };
+
         private void Awake()
         {
+            if (Camera.main != null)
+            {
+                Camera.main.depthTextureMode = DepthTextureMode.Depth;   //shader need depth texture
+            }
             LoadData();
             LoadPrefab();
             LoadAssets();
@@ -166,7 +184,8 @@ namespace Dg
                 GUIStyle langButton = new GUIStyle(GUI.skin.button);
                 langButton.fontStyle = FontStyle.Bold;
                 langButton.fontSize = (int)(langButton.fontSize * 0.9f);
-                if (GUILayout.Button(currentLang, langButton, GUILayout.MaxWidth(40), GUILayout.MaxHeight(20))){
+                if (GUILayout.Button(currentLang, langButton, GUILayout.MaxWidth(40), GUILayout.MaxHeight(20)))
+                {
                     LanguageSetting.SwitchLanguage();
                 }
                 GUILayout.FlexibleSpace();
@@ -232,29 +251,17 @@ namespace Dg
                 {
                     EditorGUI.BeginChangeCheck();
                     prefab = (GameObject)EditorGUILayout.ObjectField(GetText("KPrefab"), prefab, typeof(GameObject), true);
-                    if (prefab != null)
-                    {
-                        isPrefabValid = true;
-                        GameObject obj = PrefabUtility.GetCorrespondingObjectFromOriginalSource(prefab);   //get source object from the field
-                        if (obj != null)
-                        {
-                            prefab = obj;
-                        }
-                        else
-                        {
-                            prefab = null;
-                            isPrefabValid = false;
-                        }
-                    }
                     if (EditorGUI.EndChangeCheck())
                     {
+                        ValidatePrefab();
                         UpdatePrefabInfo();
                     }
-                    if (!isPrefabValid)
+                    if (prefabError != PrefabErrorMode.None)
                     {
-                        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                        EditorGUILayout.LabelField(GetText("KError"), EditorStyles.wordWrappedMiniLabel);
-                        EditorGUILayout.EndVertical();
+                        using (new GUILayout.VerticalScope(EditorStyles.helpBox))
+                        {
+                            EditorGUILayout.LabelField(GetText(errorTable[prefabError]), EditorStyles.wordWrappedLabel);
+                        }
                     }
                 }
                 GUILayout.Space(15);
@@ -266,21 +273,23 @@ namespace Dg
                     EditorGUILayout.PropertyField(propRandRotation, new GUIContent(GetText("KRandRotation")));
                     if (randomRotation)
                     {
-                        EditorGUI.indentLevel++;
-                        EditorGUILayout.PropertyField(propRandAngle, new GUIContent(GetText("KEulerAngle")));
-                        propRandAngle.floatValue = Mathf.Clamp(propRandAngle.floatValue, 0f, 360f);
-                        EditorGUI.indentLevel--;
+                        using (new EditorGUI.IndentLevelScope())
+                        {
+                            EditorGUILayout.PropertyField(propRandAngle, new GUIContent(GetText("KEulerAngle")));
+                            propRandAngle.floatValue = Mathf.Clamp(propRandAngle.floatValue, 0f, 360f);
+                        }
                     }
                     EditorGUILayout.Space(10);
                     EditorGUILayout.PropertyField(propRandScale, new GUIContent(GetText("KRandScale")));
                     if (randomScale)
                     {
-                        EditorGUI.indentLevel++;
-                        EditorGUILayout.PropertyField(propScaleMin, new GUIContent(GetText("KMinScale")));
-                        propScaleMin.floatValue = Mathf.Max(0.01f, propScaleMin.floatValue);
-                        EditorGUILayout.PropertyField(propScaleMax, new GUIContent(GetText("KMaxScale")));
-                        propScaleMax.floatValue = Mathf.Max(0.01f, propScaleMax.floatValue);
-                        EditorGUI.indentLevel--;
+                        using (new EditorGUI.IndentLevelScope())
+                        {
+                            EditorGUILayout.PropertyField(propScaleMin, new GUIContent(GetText("KMinScale")));
+                            propScaleMin.floatValue = Mathf.Max(0.01f, propScaleMin.floatValue);
+                            EditorGUILayout.PropertyField(propScaleMax, new GUIContent(GetText("KMaxScale")));
+                            propScaleMax.floatValue = Mathf.Max(0.01f, propScaleMax.floatValue);
+                        }
                     }
                 }
                 GUILayout.Space(20);
@@ -330,7 +339,7 @@ namespace Dg
                 case Mode.Delete:
                     if (isSnappedMode || prefabInfo.originalPrefab == null) return;
                     DeleteModeInputCheck();
-                    List<GameObject> objsInDeletionRange = GetObjectsInDeletionRange();
+                    IEnumerable<GameObject> objsInDeletionRange = GetObjectsInDeletionRange();
                     DrawDeletionPreviews(objsInDeletionRange);
                     break;
                 default:
@@ -557,7 +566,7 @@ namespace Dg
 
         private void DeleteObjects()
         {
-            List<GameObject> deletingObjs = GetObjectsInDeletionRange();
+            IEnumerable<GameObject> deletingObjs = GetObjectsInDeletionRange();
             foreach (GameObject o in deletingObjs)
             {
                 Undo.DestroyObjectImmediate(o);
@@ -638,10 +647,7 @@ namespace Dg
             }
         }
 
-        private float GetRandValue(int index)
-        {
-            return randValues[index % randValues.Length];
-        }
+        private float GetRandValue(int index) => randValues[index % randValues.Length];
 
         private void ReleaseHotControl()
         {
@@ -668,7 +674,7 @@ namespace Dg
             }
         }
 
-        private List<GameObject> GetObjectsInDeletionRange()
+        private IEnumerable<GameObject> GetObjectsInDeletionRange()
         {
             List<GameObject> objsList = new List<GameObject>();
             if (prefabInfo.hasCollider)
@@ -679,7 +685,7 @@ namespace Dg
                     GameObject obj = c.gameObject;
                     if (prefabInfo.originalPrefab == PrefabUtility.GetCorrespondingObjectFromSource(obj))
                     {
-                        if (IsWithinDeletionHeightRange(obj)) //height range 
+                        if (IsWithinDeletionHeightRange(obj))
                         {
                             objsList.Add(obj);
                         }
@@ -701,7 +707,7 @@ namespace Dg
             return objsList;
         }
 
-        private List<GameObject> FindAllInstancesOfPrefab(GameObject prefab)
+        private IEnumerable<GameObject> FindAllInstancesOfPrefab(GameObject prefab)
         {
             List<GameObject> foundInstances = new List<GameObject>();
             GameObject[] allObjects = SceneManager.GetActiveScene().GetRootGameObjects();
@@ -849,27 +855,26 @@ namespace Dg
 
         private void DrawRange(RaycastHit hit, Color color, float radius)
         {
-            int segments = 64;
-            segments--;
-            Vector3[] points = new Vector3[segments];
+            int segment = discSegment - 1;
+            Vector3[] points = new Vector3[segment];
             Vector3 forward = Vector3.Cross(hit.normal, Vector3.up).normalized;
             if (forward.sqrMagnitude < 0.001f)
             {
                 forward = Vector3.Cross(hit.normal, Vector3.right).normalized;
             }
             Vector3 right = Vector3.Cross(forward, hit.normal);
-            for (int i = 0; i < segments; i++)
+            for (int i = 0; i < segment; i++)
             {
-                float t = i / (float)segments;
+                float t = i / (float)segment;
                 float angle = 2 * Mathf.PI * t;
                 Vector2 pointLS = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
                 Vector3 pointWS = GetWorldPosFromLocal(pointLS, hit.point, forward, hit.normal, right, radius);
                 points[i] = pointWS;
             }
-            Vector3?[] surfaceHits = new Vector3?[segments + 1];
+            Vector3?[] surfaceHits = new Vector3?[segment + 1];
             float raycastOffset = GetRaycastOffset();
             float raycastmaxDistance = GetRaycastMaxDistance();
-            for (int i = 0; i < segments; i++)
+            for (int i = 0; i < segment; i++)
             {
                 Ray pointRay = new Ray(points[i] + hit.normal * raycastOffset, -hit.normal);
                 if (Physics.Raycast(pointRay, out RaycastHit pointHit, raycastmaxDistance))
@@ -881,11 +886,11 @@ namespace Dg
                     surfaceHits[i] = null;
                 }
             }
-            for (int i = 0; i < segments; i++)  //connect last element to first
+            for (int i = 0; i < segment; i++)  //connect last element to first
             {
                 if (surfaceHits[i] != null)
                 {
-                    surfaceHits[segments] = surfaceHits[i];
+                    surfaceHits[segment] = surfaceHits[i];
                     break;
                 }
             }
@@ -1025,6 +1030,32 @@ namespace Dg
         {
             string data = JsonUtility.ToJson(this, false);
             EditorPrefs.SetString(this.GetType().ToString(), data);
+        }
+
+        private void ValidatePrefab()
+        {
+            if (prefab == null) return;
+            GameObject obj = PrefabUtility.GetCorrespondingObjectFromOriginalSource(prefab);   //get source object from the field
+            bool isAlreadyPrefab = (obj == prefab);
+            bool isOuterPrefab = PrefabUtility.IsOutermostPrefabInstanceRoot(prefab);
+            if (obj != null)
+            {
+                if (isOuterPrefab || isAlreadyPrefab)
+                {
+                    prefab = obj;
+                    prefabError = PrefabErrorMode.None;
+                }
+                else
+                {
+                    prefab = null;
+                    prefabError = PrefabErrorMode.NotOuterMostPrefab;
+                }
+            }
+            else
+            {
+                prefab = null;
+                prefabError = PrefabErrorMode.NotAnPrefab;
+            }
         }
 
         private void UpdatePrefabInfo()

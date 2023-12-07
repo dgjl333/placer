@@ -17,13 +17,13 @@ namespace Dg
         private static string csvPath;
         private static string settingPath;
         private static Dictionary<string, string> translations = new Dictionary<string, string>();
-        public static Language language { get; private set; } 
+        public static Language language { get; private set; }
 
         [InitializeOnLoadMethod]
         private static void Init()
         {
             csvPath = AssetDatabase.GUIDToAssetPath("9496dd598027c3047b8233228b4007cb");
-            settingPath = AssetDatabase.GUIDToAssetPath("a14632402852e6c46b31eb8ae2607b0b"); 
+            settingPath = AssetDatabase.GUIDToAssetPath("a14632402852e6c46b31eb8ae2607b0b");
             LoadSetting();
             LoadTexts();
         }
@@ -90,7 +90,7 @@ namespace Dg
             }
             else
             {
-                language = Enum.Parse<Language>(lang);
+                language = (Language)Enum.Parse(typeof(Language), lang);
             }
         }
 
@@ -104,7 +104,6 @@ namespace Dg
             {
                 language = Language.ENG;
             }
-            SaveSetting();
         }
     }
 }

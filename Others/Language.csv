@@ -17,4 +17,5 @@ KEulerAngle,Euler Angle,オイラー角
 KRandScale,Random Scale,ランダムスケール
 KMinScale,Min Scale,最小スケール
 KMaxScale,Max Scale,最大スケール
-KError,Object must be an instance of a prefab,オブジェクトはプレハブのインスタンスである必要があります
+KNotPrefabError,Object must be an instance of a prefab,オブジェクトはプレハブのインスタンスである必要があります
+KNotOuterMostPrefabError,Object must be the outer most prefab,オブジェクトは一番外側のプレハブである必要があります
