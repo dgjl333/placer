@@ -30,6 +30,7 @@ namespace Dg
         public float scaleMin = 0.9f;
         public float scaleMax = 1.1f;
         public float heightOffset = 0f;
+        public float scatterHeightTolerance = 2f;
         public bool keepRootRotation = false;
         public Color radiusColor = new Color(0.866f, 0.160f, 0.498f, 1f);
         public Mode mode = Mode.Scatter;
@@ -39,29 +40,30 @@ namespace Dg
         private Material deletionMaterial;
         private GUIContent[] toolIcons;
 
-        SerializedObject so;
-        SerializedProperty propRadius;
-        SerializedProperty propRotationOffset;
-        SerializedProperty propSpacing;
-        SerializedProperty propDeletionRadius;
-        SerializedProperty propSpawnCount;
-        SerializedProperty propHeightOffset;
-        SerializedProperty propRandRotation;
-        SerializedProperty propRandAngle;
-        SerializedProperty propRandScale;
-        SerializedProperty propScaleMin;
-        SerializedProperty propScaleMax;
-        SerializedProperty propColor;
-        SerializedProperty propKeepRootRotation;
+        private SerializedObject so;
+        private SerializedProperty propRadius;
+        private SerializedProperty propRotationOffset;
+        private SerializedProperty propSpacing;
+        private SerializedProperty propDeletionRadius;
+        private SerializedProperty propSpawnCount;
+        private SerializedProperty propHeightOffset;
+        private SerializedProperty propRandRotation;
+        private SerializedProperty propRandAngle;
+        private SerializedProperty propRandScale;
+        private SerializedProperty propScaleMin;
+        private SerializedProperty propScaleMax;
+        private SerializedProperty propColor;
+        private SerializedProperty propKeepRootRotation;
+        private SerializedProperty propScatterHeightTolerance;
 
-        private PrefabErrorMode prefabError = PrefabErrorMode.None;
         [SerializeField] private string prefabLocation = null;
+        private PrefabErrorMode prefabError = PrefabErrorMode.None;
         private Pose hitPoint;
         private List<Pose> poseList = new List<Pose>();
         private RandPoints randPoints;
         private PrefabInfo prefabInfo;
         private float[] randValues;
-        private bool showPreviewSetting = false;
+        private bool isShowAdvancedSetting = false;
         private bool shift = false;
         private bool ctrl = false;
         private bool alt = false;
@@ -170,6 +172,7 @@ namespace Dg
             propSpacing = so.FindProperty(nameof(spacing));
             propRandAngle = so.FindProperty(nameof(randAngle));
             propRotationOffset = so.FindProperty(nameof(rotationOffset));
+            propScatterHeightTolerance = so.FindProperty(nameof(scatterHeightTolerance));
         }
 
         private void OnGUI()
@@ -187,6 +190,7 @@ namespace Dg
                 if (GUILayout.Button(currentLang, langButton, GUILayout.MaxWidth(40), GUILayout.MaxHeight(20)))
                 {
                     LanguageSetting.SwitchLanguage();
+                    LoadAssets();
                 }
                 GUILayout.FlexibleSpace();
                 if (GUILayout.Button(currentText, GUILayout.MaxWidth(230), GUILayout.Height(20)))
@@ -293,11 +297,18 @@ namespace Dg
                     }
                 }
                 GUILayout.Space(20);
-                //showPreviewSetting = EditorGUILayout.Foldout(showPreviewSetting, "Preview Setting");
-                //if (showPreviewSetting)
-                //{
-                //    EditorGUILayout.PropertyField(propColor);
-                //}
+                isShowAdvancedSetting = EditorGUILayout.Foldout(isShowAdvancedSetting, GetText("KAdvancedSetting"));
+                if (isShowAdvancedSetting)
+                {
+                    EditorGUILayout.PropertyField(propColor, new GUIContent(GetText("KRadiusColor")));
+                    EditorGUI.BeginChangeCheck();
+                    float newTolerance = EditorGUILayout.Slider(GetText("KTolerance"), propScatterHeightTolerance.floatValue, 0f, 8f);
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        propScatterHeightTolerance.floatValue = newTolerance;
+                    }
+
+                }
             }
 
             if (so.ApplyModifiedProperties())
@@ -475,12 +486,12 @@ namespace Dg
 
         private float GetRaycastOffset()
         {
-            return spawnRadius / 3f;
+            return 0.1f + (spawnRadius * scatterHeightTolerance) / 9f;
         }
 
         private float GetRaycastMaxDistance()
         {
-            return GetRaycastOffset() * 3f;
+            return GetRaycastOffset() * 2f + GetObjectBoundingBoxSize(prefab) / 2f;
         }
 
         private void DrawSnapObjectsPreview()
@@ -576,7 +587,7 @@ namespace Dg
 
         private void AdjustOffset()
         {
-            float scrollDir = Mathf.Sign(Event.current.delta.y);
+            float scrollDir = GetScrollDirection();
             float newValue = Mathf.Clamp(propHeightOffset.floatValue - scrollDir * 0.1f, minOffset, maxOffset);
             so.Update();
             propHeightOffset.floatValue = newValue;
@@ -585,7 +596,7 @@ namespace Dg
 
         private void AdjustRadius()
         {
-            float scrollDir = Mathf.Sign(Event.current.delta.y);
+            float scrollDir = GetScrollDirection();
             float newValue;
             so.Update();
             switch (mode)
@@ -605,8 +616,16 @@ namespace Dg
             so.ApplyModifiedPropertiesWithoutUndo();
         }
 
+        private float GetScrollDirection()
+        {
+            Vector2 xy = Event.current.delta;
+            float delta = Mathf.Abs(xy.x) > Mathf.Abs(xy.y) ? xy.x : xy.y;   //newer Unity when holding shift the x and y are flipped
+            return Mathf.Sign(delta);
+        }
+
         private float GetObjectBoundingBoxSize(GameObject obj)
         {
+            if (obj == null) return -1f;
             Renderer renderer = obj.GetComponent<Renderer>();
             if (renderer != null)
             {
@@ -996,20 +1015,20 @@ namespace Dg
             {
                 toolIcons = new GUIContent[]
                 {
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/brush_dark.png", typeof(Texture)),"Scatter"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/pen_dark.png", typeof(Texture)),"Place"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/rubber_dark.png", typeof(Texture)),"Delete"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/snap_dark.png", typeof(Texture)),"None"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/brush_dark.png", typeof(Texture)), GetText("KScatter")),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/pen_dark.png", typeof(Texture)), GetText("KPlace")),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/rubber_dark.png", typeof(Texture)), GetText("KDelete")),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/snap_dark.png", typeof(Texture)), GetText("KSnap")),
                 };
             }
             else
             {
                 toolIcons = new GUIContent[]
                 {
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/brush_light.png", typeof(Texture)),"Scatter"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/pen_light.png", typeof(Texture)),"Place"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/rubber_light.png", typeof(Texture)),"Delete"),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/snap_light.png", typeof(Texture)),"None"),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/brush_light.png", typeof(Texture)), GetText("KScatter")),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/pen_light.png", typeof(Texture)), GetText("KPlace")),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/rubber_light.png", typeof(Texture)), GetText("KDelete")),
+                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/snap_light.png", typeof(Texture)), GetText("KSnap")),
                 };
             }
         }

@@ -19,3 +19,10 @@ KMinScale,Min Scale,最小スケール
 KMaxScale,Max Scale,最大スケール
 KNotPrefabError,Object must be an instance of a prefab,オブジェクトはプレハブのインスタンスである必要があります
 KNotOuterMostPrefabError,Object must be the outer most prefab,オブジェクトは一番外側のプレハブである必要があります
+KAdvancedSetting,Advanced Setting,詳細設定
+KRadiusColor,Circle Color,円の色
+KTolerance,Scatter Height Tolerance,散布高さの許容度
+KScatter,Scatter,散布
+KPlace,Place,配置
+KDelete,Delete,削除
+KSnap,Snap,スナップ
