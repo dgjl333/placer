@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -8,6 +9,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 using static Dg.Placer.RandData;
+using Random = UnityEngine.Random;
 
 namespace Dg
 {
@@ -85,7 +87,7 @@ namespace Dg
         private readonly float GizmoWidth = 3f;
         private readonly int discSegment = 64;
 
-        internal static class RandData
+        public static class RandData
         {
             public static class RandPoints
             {
@@ -396,7 +398,7 @@ namespace Dg
                 if (EditorGUI.EndChangeCheck())
                 {
                     propRadius.floatValue = newRadius;
-                    RandPoints.ValidateRandPoints(spawnCount, spawnRadius, spacing);
+                    RandPoints.ValidateRandPoints(spawnCount, newRadius, spacing);
                 }
             }
 
@@ -417,8 +419,8 @@ namespace Dg
                 if (EditorGUI.EndChangeCheck())
                 {
                     propSpawnCount.intValue = newSpawnCount;
-                    GenerateRandValues(spawnCount);
-                    RandPoints.GenerateRandPoints(spawnCount, spawnRadius, spacing);
+                    GenerateRandValues(newSpawnCount);
+                    RandPoints.GenerateRandPoints(newSpawnCount, spawnRadius, spacing);
                 }
             }
 
@@ -429,7 +431,7 @@ namespace Dg
                 propSpacing.floatValue = Mathf.Max(0f, propSpacing.floatValue);
                 if (EditorGUI.EndChangeCheck())
                 {
-                    RandPoints.ValidateRandPoints(spawnCount, spawnRadius, spacing);
+                    RandPoints.ValidateRandPoints(spawnCount, spawnRadius, propSpacing.floatValue);
                 }
             }
 
@@ -821,7 +823,7 @@ namespace Dg
             {
                 return renderer.bounds.size.y;
             }
-            return -1f;
+            return 0f;
         }
 
         private Vector3 GetWorldPosFromLocal(Vector2 Localposition, Vector3 origin, Vector3 forward, Vector3 up, Vector3 right, float radius)
@@ -934,11 +936,10 @@ namespace Dg
             deletionMaterial.SetPass(0);
             foreach (GameObject o in objs)
             {
-                MeshFilter[] filters = o.GetComponentsInChildren<MeshFilter>();
-                foreach (MeshFilter filter in filters)
+                IEnumerable<Tuple<Mesh, Matrix4x4>> allMeshes = GetAllMeshes(o);
+                foreach(Tuple<Mesh, Matrix4x4> mesh in allMeshes)
                 {
-                    Mesh mesh = filter.sharedMesh;
-                    Graphics.DrawMeshNow(mesh, filter.transform.localToWorldMatrix);
+                    Graphics.DrawMeshNow(mesh.Item1, mesh.Item2);
                 }
             }
         }
@@ -947,7 +948,7 @@ namespace Dg
         {
             if (previewMaterial == null) return;
             previewMaterial.SetPass(0);
-            MeshFilter[] filters = o.GetComponentsInChildren<MeshFilter>();
+            IEnumerable<Tuple<Mesh, Matrix4x4>> allMeshes = GetAllMeshes(o);
             float height;
             height = randHeight ? GetRandHeight(randValueIndex, randHeightMin, randHeightMax) + heightOffset : heightOffset;
             Matrix4x4 yAxisOffsetMatrix = Matrix4x4.TRS(new Vector3(0f, height, 0f), Quaternion.identity, Vector3.one);
@@ -958,18 +959,26 @@ namespace Dg
                 Matrix4x4 ignoreParentRotationMatrix = Matrix4x4.TRS(Vector3.zero, Quaternion.Inverse(o.transform.rotation), Vector3.one);
                 ignoreParentMatrix = ignoreParentRotationMatrix * ignoreParentMatrix;
             }
-            foreach (MeshFilter filter in filters)
+            foreach (Tuple<Mesh, Matrix4x4> mesh in allMeshes)
             {
-                Mesh mesh = filter.sharedMesh;
-                Matrix4x4 childMatrix = filter.transform.localToWorldMatrix;
+                Matrix4x4 childMatrix = mesh.Item2;
                 Matrix4x4 outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
                 if (randScale)
                 {
                     float scale = GetRandScale(randValueIndex, randScaleMin, randScaleMax);
                     outputMatrix = outputMatrix * Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * scale);
                 }
-                Graphics.DrawMeshNow(mesh, outputMatrix);
+                Graphics.DrawMeshNow(mesh.Item1, outputMatrix);
             }
+        }
+
+        private IEnumerable<Tuple<Mesh, Matrix4x4>> GetAllMeshes(GameObject o)
+        {
+            MeshFilter[] meshFilters = o.GetComponentsInChildren<MeshFilter>();
+            SkinnedMeshRenderer[] skinRenderers = o.GetComponentsInChildren<SkinnedMeshRenderer>();
+            return meshFilters
+                  .Select(meshFilter => Tuple.Create(meshFilter.sharedMesh, meshFilter.transform.localToWorldMatrix))
+                  .Concat(skinRenderers.Select(skinnedMeshRenderer => Tuple.Create(skinnedMeshRenderer.sharedMesh, skinnedMeshRenderer.transform.localToWorldMatrix)));
         }
 
         private void SnapObjects()
@@ -1068,8 +1077,6 @@ namespace Dg
                 if (!isNull)
                 {
                     Handles.DrawLine( (Vector3)lastPoint, (Vector3)surfaceHits[i], GizmoWidth);
-
-
                 }
                 else
                 {
@@ -1085,6 +1092,7 @@ namespace Dg
         {
             float size = GetObjectBoundingBoxSize(o);
             if (size == -1f) return false;
+            if (size == 0f) return true;
             float range = 2f * size;
             float distanceToSurface = DistancePlanePoint(hitPoint.rotation * Vector3.up, hitPoint.position, o.transform.position);
             if (randHeight)
