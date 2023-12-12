@@ -1,6 +1,4 @@
-﻿using PlasticGui.WorkspaceWindow;
-using System.Collections.Generic;
-using System.Diagnostics;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -9,6 +7,7 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
+using static Dg.Placer.RandData;
 
 namespace Dg
 {
@@ -21,6 +20,7 @@ namespace Dg
         }
 
         public bool on = true;
+        public Mode mode = Mode.Scatter;
         public float spawnRadius = 3f;
         public float rotationOffset = 0f;
         public float spacing = 0.1f;
@@ -33,13 +33,12 @@ namespace Dg
         public float randHeightMax = 2f;
         public float heightOffset = 0f;
         public float scatterHeightTolerance = 2f;
-        public Color radiusColor = new Color(0.866f, 0.160f, 0.498f, 1f);
-        public Mode mode = Mode.Scatter;
         public bool keepRootRotation = false;
         public bool randScale = false;
         public bool randRotation = false;
         public bool randHeight = false;
         public bool alignWithWorldAxis = true;
+        public Color radiusColor = new Color(0.866f, 0.160f, 0.498f, 1f);
 
         private GameObject prefab;
         private Material previewMaterial;
@@ -72,7 +71,6 @@ namespace Dg
         private PrefabErrorMode prefabError = PrefabErrorMode.None;
         private Pose hitPoint;
         private List<Pose> poseList = new List<Pose>();
-        private RandData.RandPoints randPoints;
         private PrefabInfo prefabInfo;
         private bool shift = false;
         private bool ctrl = false;
@@ -87,15 +85,60 @@ namespace Dg
         private readonly float GizmoWidth = 3f;
         private readonly int discSegment = 64;
 
-        private static class RandData
+        internal static class RandData
         {
-            private static float[] randValues;
-
-            public struct RandPoints
+            public static class RandPoints
             {
-                public List<Vector2> points;
-                public float minDistance;
+                public static List<Vector2> points;
+                public static float minDistance;
+
+                public static void GenerateRandPoints(int count, float spawnRadius, float spacing)
+                {
+                    int retryCount = 0;
+                    points = new List<Vector2>();
+                    minDistance = float.MaxValue;
+                    for (int i = 0; i < count; i++)
+                    {
+                        Vector2 newPoint = Random.insideUnitCircle;
+                        while (!IsPointValid(newPoint, spawnRadius, spacing))
+                        {
+                            if (retryCount > 20)
+                            {
+                                return;
+                            }
+                            newPoint = Random.insideUnitCircle;
+                            retryCount++;
+                        }
+                        retryCount = 0;
+                        points.Add(newPoint);
+                    }
+                }
+
+                public static void ValidateRandPoints(int count, float spawnRadius, float spacing)
+                {
+                    float currentPointAmout = points.Count;
+                    if (currentPointAmout < count || minDistance * spawnRadius < spacing)
+                    {
+                        GenerateRandPoints(count, spawnRadius, spacing);
+                    }
+                }
+
+                private static bool IsPointValid(Vector2 point, float spawnRadius, float spacing)
+                {
+                    foreach (Vector2 existingPoint in points)
+                    {
+                        float distance = Vector2.Distance(existingPoint, point);
+                        if (distance * spawnRadius < spacing)
+                        {
+                            return false;
+                        }
+                        minDistance = Mathf.Min(minDistance, distance);
+                    }
+                    return true;
+                }
             }
+
+            private static float[] randValues;
 
             public static void GenerateRandValues(int count)
             {
@@ -126,7 +169,6 @@ namespace Dg
 
             private static float GetRandValue(int index) => randValues[index % randValues.Length];
         }
-
         private struct HitInfo
         {
             public Vector3 Tangent { get; private set; }
@@ -219,8 +261,8 @@ namespace Dg
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
             SceneView.duringSceneGui += DuringSceneGUI;
             GetProperties();
-            GenerateRandPoints();
-            RandData.GenerateRandValues(spawnCount);
+            RandPoints.GenerateRandPoints(spawnCount, spawnRadius, spacing);
+            GenerateRandValues(spawnCount);
             controlID = GUIUtility.GetControlID(FocusType.Passive);
             UpdatePrefabInfo();
         }
@@ -354,7 +396,7 @@ namespace Dg
                 if (EditorGUI.EndChangeCheck())
                 {
                     propRadius.floatValue = newRadius;
-                    ValidateRandPoints();
+                    RandPoints.ValidateRandPoints(spawnCount, spawnRadius, spacing);
                 }
             }
 
@@ -375,8 +417,8 @@ namespace Dg
                 if (EditorGUI.EndChangeCheck())
                 {
                     propSpawnCount.intValue = newSpawnCount;
-                    RandData.GenerateRandValues(spawnCount);
-                    GenerateRandPoints();
+                    GenerateRandValues(spawnCount);
+                    RandPoints.GenerateRandPoints(spawnCount, spawnRadius, spacing);
                 }
             }
 
@@ -387,7 +429,7 @@ namespace Dg
                 propSpacing.floatValue = Mathf.Max(0f, propSpacing.floatValue);
                 if (EditorGUI.EndChangeCheck())
                 {
-                    ValidateRandPoints();
+                    RandPoints.ValidateRandPoints(spawnCount, spawnRadius, spacing);
                 }
             }
 
@@ -607,7 +649,7 @@ namespace Dg
                         DrawAxisGizmo(hit.point, hitInfo.Tangent, hitInfo.Normal, hitInfo.BiTangent);
                         float raycastOffset = GetRaycastOffset();
                         float raycastmaxDistance = GetRaycastMaxDistance();
-                        foreach (Vector2 p in randPoints.points)
+                        foreach (Vector2 p in RandPoints.points)
                         {
                             Vector3 worldPos = GetWorldPosFromLocal(p, hit.point, hitInfo.Tangent, hitInfo.Normal, hitInfo.BiTangent, spawnRadius);
                             Ray pointRay = new Ray(worldPos + hitInfo.Normal * raycastOffset, -hitInfo.Normal);
@@ -752,7 +794,7 @@ namespace Dg
                 case Mode.Scatter:
                     newValue = Mathf.Clamp(propRadius.floatValue * (1 - scrollDir * 0.04f), minRadius, maxRadius);
                     propRadius.floatValue = newValue;
-                    ValidateRandPoints();
+                    RandPoints.ValidateRandPoints(spawnCount, spawnRadius, spacing);
                     break;
                 case Mode.Delete:
                     newValue = Mathf.Clamp(propDeletionRadius.floatValue * (1 - scrollDir * 0.04f), minRadius, maxRadius);
@@ -803,7 +845,7 @@ namespace Dg
                 Quaternion rot = Quaternion.LookRotation(pointList[i].forward, pointList[i].up);
                 if (randRotation)
                 {
-                    point.rotation = Quaternion.AngleAxis(RandData.GetRandRotation(i, randAngle) + rotationOffset, pointList[i].up) * rot;
+                    point.rotation = Quaternion.AngleAxis(GetRandRotation(i, randAngle) + rotationOffset, pointList[i].up) * rot;
                 }
                 else
                 {
@@ -907,7 +949,7 @@ namespace Dg
             previewMaterial.SetPass(0);
             MeshFilter[] filters = o.GetComponentsInChildren<MeshFilter>();
             float height;
-            height = randHeight ? RandData.GetRandHeight(randValueIndex, randHeightMin, randHeightMax) + heightOffset : heightOffset;
+            height = randHeight ? GetRandHeight(randValueIndex, randHeightMin, randHeightMax) + heightOffset : heightOffset;
             Matrix4x4 yAxisOffsetMatrix = Matrix4x4.TRS(new Vector3(0f, height, 0f), Quaternion.identity, Vector3.one);
             Matrix4x4 ignoreParentPositionMatrix = Matrix4x4.TRS(-o.transform.position, Quaternion.identity, Vector3.one);
             Matrix4x4 ignoreParentMatrix = ignoreParentPositionMatrix;
@@ -923,7 +965,7 @@ namespace Dg
                 Matrix4x4 outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
                 if (randScale)
                 {
-                    float scale = RandData.GetRandScale(randValueIndex, randScaleMin, randScaleMax);
+                    float scale = GetRandScale(randValueIndex, randScaleMin, randScaleMax);
                     outputMatrix = outputMatrix * Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * scale);
                 }
                 Graphics.DrawMeshNow(mesh, outputMatrix);
@@ -949,63 +991,17 @@ namespace Dg
                 GameObject spawnObject = (GameObject)PrefabUtility.InstantiatePrefab(prefabInfo.originalPrefab);
                 Undo.RegisterCreatedObjectUndo(spawnObject, "Spawn Objects");
                 float height;
-                height = randHeight ? RandData.GetRandHeight(i, randHeightMin, randHeightMax) + heightOffset : heightOffset;
+                height = randHeight ? GetRandHeight(i, randHeightMin, randHeightMax) + heightOffset : heightOffset;
                 spawnObject.transform.position = poseList[i].position + poseList[i].rotation * new Vector3(0f, height, 0f);
                 spawnObject.transform.rotation = keepRootRotation ? poseList[i].rotation * prefabInfo.originalPrefab.transform.rotation : poseList[i].rotation;
                 if (randScale)
                 {
-                    float scale = RandData.GetRandScale(i, randScaleMin, randScaleMax);
+                    float scale = GetRandScale(i, randScaleMin, randScaleMax);
                     spawnObject.transform.localScale = spawnObject.transform.localScale * scale;
                 }
             }
-            GenerateRandPoints();
-            RandData.GenerateRandValues(spawnCount);
-        }
-
-
-        private void GenerateRandPoints()
-        {
-            int retryCount = 0;
-            randPoints.points = new List<Vector2>();
-            randPoints.minDistance = float.MaxValue;
-            for (int i = 0; i < spawnCount; i++)
-            {
-                Vector2 newPoint = Random.insideUnitCircle;
-                while (!IsPointValid(newPoint))
-                {
-                    if (retryCount > 20)
-                    {
-                        return;
-                    }
-                    newPoint = Random.insideUnitCircle;
-                    retryCount++;
-                }
-                retryCount = 0;
-                randPoints.points.Add(newPoint);
-            }
-        }
-
-        private bool IsPointValid(Vector2 point)
-        {
-            foreach (Vector2 existingPoint in randPoints.points)
-            {
-                float distance = Vector2.Distance(existingPoint, point);
-                if (distance * spawnRadius < spacing)
-                {
-                    return false;
-                }
-                randPoints.minDistance = Mathf.Min(randPoints.minDistance, distance);
-            }
-            return true;
-        }
-
-        private void ValidateRandPoints()
-        {
-            float currentPointAmout = randPoints.points.Count;
-            if (currentPointAmout < spawnCount || randPoints.minDistance * spawnRadius < spacing)
-            {
-                GenerateRandPoints();
-            }
+            RandPoints.GenerateRandPoints(spawnCount, spawnRadius, spacing);
+            GenerateRandValues(spawnCount);
         }
 
         private void DrawRange(RaycastHit hit, Color color, float radius)
