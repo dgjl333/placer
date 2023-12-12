@@ -26,3 +26,8 @@ KScatter,Scatter,散布
 KPlace,Place,配置
 KDelete,Delete,削除
 KSnap,Snap,スナップ
+KRandSetting,Randomness Setting,ランダム要素設定
+KAlignWithWorld,Align With World Axis,ワールド軸に合わせる
+KRandHeight,Random Height,ランダム高さ
+KMinHeight,Min Height,最小高さ
+KMaxHeight,Max Height,最大高さ

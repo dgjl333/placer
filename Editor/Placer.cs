@@ -1,4 +1,6 @@
-﻿using System.Collections.Generic;
+﻿using PlasticGui.WorkspaceWindow;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -18,22 +20,26 @@ namespace Dg
             GetWindow<Placer>();
         }
 
+        public bool on = true;
         public float spawnRadius = 3f;
         public float rotationOffset = 0f;
         public float spacing = 0.1f;
         public float deletionRadius = 1f;
         public int spawnCount = 5;
-        public bool on = true;
-        public bool randomRotation = false;
         public float randAngle = 180f;
-        public bool randomScale = false;
-        public float scaleMin = 0.9f;
-        public float scaleMax = 1.1f;
+        public float randScaleMin = 0.9f;
+        public float randScaleMax = 1.1f;
+        public float randHeightMin = 0f;
+        public float randHeightMax = 2f;
         public float heightOffset = 0f;
         public float scatterHeightTolerance = 2f;
-        public bool keepRootRotation = false;
         public Color radiusColor = new Color(0.866f, 0.160f, 0.498f, 1f);
         public Mode mode = Mode.Scatter;
+        public bool keepRootRotation = false;
+        public bool randScale = false;
+        public bool randRotation = false;
+        public bool randHeight = false;
+        public bool alignWithWorldAxis = true;
 
         private GameObject prefab;
         private Material previewMaterial;
@@ -50,20 +56,24 @@ namespace Dg
         private SerializedProperty propRandRotation;
         private SerializedProperty propRandAngle;
         private SerializedProperty propRandScale;
-        private SerializedProperty propScaleMin;
-        private SerializedProperty propScaleMax;
+        private SerializedProperty propRandScaleMin;
+        private SerializedProperty propRandScaleMax;
+        private SerializedProperty propRandHeightMin;
+        private SerializedProperty propRandHeightMax;
         private SerializedProperty propColor;
         private SerializedProperty propKeepRootRotation;
         private SerializedProperty propScatterHeightTolerance;
+        private SerializedProperty propAlignWithWorldAxis;
+        private SerializedProperty propRandHeight;
 
+        public bool isShowAdvancedSetting = false;
+        public bool isShowRandSetting = true;
         [SerializeField] private string prefabLocation = null;
         private PrefabErrorMode prefabError = PrefabErrorMode.None;
         private Pose hitPoint;
         private List<Pose> poseList = new List<Pose>();
-        private RandPoints randPoints;
+        private RandData.RandPoints randPoints;
         private PrefabInfo prefabInfo;
-        private float[] randValues;
-        private bool isShowAdvancedSetting = false;
         private bool shift = false;
         private bool ctrl = false;
         private bool alt = false;
@@ -74,8 +84,79 @@ namespace Dg
         private readonly float maxRadius = 50f;
         private readonly float minOffset = -5f;
         private readonly float maxOffset = 5f;
-        private readonly float GizmoWidth = 3.5f;
+        private readonly float GizmoWidth = 3f;
         private readonly int discSegment = 64;
+
+        private static class RandData
+        {
+            private static float[] randValues;
+
+            public struct RandPoints
+            {
+                public List<Vector2> points;
+                public float minDistance;
+            }
+
+            public static void GenerateRandValues(int count)
+            {
+                randValues = new float[count];
+                for (int i = 0; i < count; i++)
+                {
+                    randValues[i] = Random.value;
+                }
+            }
+
+            public static float GetRandScale(int index, float scaleMin, float scaleMax)
+            {
+                float rand = GetRandValue(index);
+                return Mathf.Lerp(scaleMin, scaleMax, rand);
+            }
+
+            public static float GetRandRotation(int index, float angleMax)
+            {
+                float rand = GetRandValue(index);
+                return rand * angleMax;
+            }
+
+            public static float GetRandHeight(int index, float heightMin, float heightMax)
+            {
+                float rand = GetRandValue(index);
+                return Mathf.Lerp(heightMin, heightMax, rand);
+            }
+
+            private static float GetRandValue(int index) => randValues[index % randValues.Length];
+        }
+
+        private struct HitInfo
+        {
+            public Vector3 Tangent { get; private set; }
+            public Vector3 BiTangent { get; private set; }
+            public Vector3 Normal { get; private set; }
+
+            public HitInfo(Vector3 normal, Camera cam, bool alignWithWorldAxis)
+            {
+                Vector3 hitTangent;
+                if (alignWithWorldAxis)
+                {
+                    hitTangent = Vector3.Cross(Vector3.right, normal).normalized;
+                    if (hitTangent.sqrMagnitude < 0.001f)
+                    {
+                        hitTangent = Vector3.Cross(Vector3.up, normal).normalized;
+                    }
+                }
+                else
+                {
+                    hitTangent = Vector3.Cross(cam.transform.right, normal).normalized;
+                    if (hitTangent.sqrMagnitude < 0.001f)
+                    {
+                        hitTangent = Vector3.Cross(cam.transform.up, normal).normalized;
+                    }
+                }
+                this.Normal = normal;
+                this.Tangent = hitTangent;
+                this.BiTangent = Vector3.Cross(normal, hitTangent);
+            }
+        }
 
         private struct PrefabInfo
         {
@@ -99,11 +180,6 @@ namespace Dg
             }
         }
 
-        private struct RandPoints
-        {
-            public List<Vector2> points;
-            public float minDistance;
-        }
 
         public enum PrefabErrorMode
         {
@@ -144,7 +220,7 @@ namespace Dg
             SceneView.duringSceneGui += DuringSceneGUI;
             GetProperties();
             GenerateRandPoints();
-            GenerateRandValues();
+            RandData.GenerateRandValues(spawnCount);
             controlID = GUIUtility.GetControlID(FocusType.Passive);
             UpdatePrefabInfo();
         }
@@ -162,48 +238,101 @@ namespace Dg
             propRadius = so.FindProperty(nameof(spawnRadius));
             propDeletionRadius = so.FindProperty(nameof(deletionRadius));
             propSpawnCount = so.FindProperty(nameof(spawnCount));
-            propRandRotation = so.FindProperty(nameof(randomRotation));
+            propRandRotation = so.FindProperty(nameof(randRotation));
             propColor = so.FindProperty(nameof(radiusColor));
             propHeightOffset = so.FindProperty(nameof(heightOffset));
-            propScaleMin = so.FindProperty(nameof(scaleMin));
-            propScaleMax = so.FindProperty(nameof(scaleMax));
+            propRandScaleMin = so.FindProperty(nameof(randScaleMin));
+            propRandScaleMax = so.FindProperty(nameof(randScaleMax));
+            propRandHeightMin = so.FindProperty(nameof(randHeightMin));
+            propRandHeightMax = so.FindProperty(nameof(randHeightMax));
             propKeepRootRotation = so.FindProperty(nameof(keepRootRotation));
-            propRandScale = so.FindProperty(nameof(randomScale));
+            propRandScale = so.FindProperty(nameof(randScale));
             propSpacing = so.FindProperty(nameof(spacing));
             propRandAngle = so.FindProperty(nameof(randAngle));
             propRotationOffset = so.FindProperty(nameof(rotationOffset));
             propScatterHeightTolerance = so.FindProperty(nameof(scatterHeightTolerance));
+            propAlignWithWorldAxis = so.FindProperty(nameof(alignWithWorldAxis));
+            propRandHeight = so.FindProperty(nameof(randHeight));
         }
 
         private void OnGUI()
         {
             so.Update();
-            GUILayout.Space(10);
-            using (new GUILayout.HorizontalScope())
-            {
-                GUILayout.FlexibleSpace();
-                string currentText = on ? GetText("KDeactivate") : GetText("KActivate");
-                string currentLang = LanguageSetting.language.ToString();
-                GUIStyle langButton = new GUIStyle(GUI.skin.button);
-                langButton.fontStyle = FontStyle.Bold;
-                langButton.fontSize = (int)(langButton.fontSize * 0.9f);
-                if (GUILayout.Button(currentLang, langButton, GUILayout.MaxWidth(40), GUILayout.MaxHeight(20)))
-                {
-                    LanguageSetting.SwitchLanguage();
-                    LoadAssets();
-                }
-                GUILayout.FlexibleSpace();
-                if (GUILayout.Button(currentText, GUILayout.MaxWidth(230), GUILayout.Height(20)))
-                {
-                    on = !on;
-                    if (on)
-                    {
-                        OnTurnOn();
-                    }
-                }
-                GUILayout.FlexibleSpace();
-            }
+            DrawHeader();
             if (on)
+            {
+                DrawToolBar();
+                switch (mode)
+                {
+                    case Mode.Scatter:
+                        DrawAlignWithWorldAxis();
+                        DrawSpawnRadius();
+                        DrawSpawnCount();
+                        DrawSpacing();
+                        DrawHeightOffset();
+                        DrawRotationOffset();
+                        DrawPrefab();
+                        DrawRandom();
+                        break;
+                    case Mode.Place:
+                        DrawAlignWithWorldAxis();
+                        DrawSpawnRadius();
+                        DrawHeightOffset();
+                        DrawRotationOffset();
+                        DrawPrefab();
+                        DrawRandom();
+                        break;
+                    case Mode.Delete:
+                        DrawAlignWithWorldAxis();
+                        DrawDeleteRadius();
+                        DrawHeightOffset();
+                        DrawPrefab();
+                        break;
+                    case Mode.Snap:
+                        DrawAlignWithWorldAxis();
+                        DrawHeightOffset();
+                        DrawRotationOffset();
+                        break;
+                    default:
+                        break;
+                }
+                DrawAdvanced(); 
+            }
+            if (so.ApplyModifiedProperties())
+            {
+                SceneView.RepaintAll();
+            }
+
+            void DrawHeader()
+            {
+                GUILayout.Space(10);
+                using (new GUILayout.HorizontalScope())
+                {
+                    GUILayout.FlexibleSpace();
+                    string currentText = on ? GetText("KDeactivate") : GetText("KActivate");
+                    string currentLang = LanguageSetting.language.ToString();
+                    GUIStyle langButton = new GUIStyle(GUI.skin.button);
+                    langButton.fontStyle = FontStyle.Bold;
+                    langButton.fontSize = (int)(langButton.fontSize * 0.9f);
+                    if (GUILayout.Button(currentLang, langButton, GUILayout.MaxWidth(40), GUILayout.MaxHeight(20)))
+                    {
+                        LanguageSetting.SwitchLanguage();
+                        LoadAssets();
+                    }
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button(currentText, GUILayout.MaxWidth(230), GUILayout.Height(20)))
+                    {
+                        on = !on;
+                        if (on)
+                        {
+                            OnTurnOn();
+                        }
+                    }
+                    GUILayout.FlexibleSpace();
+                }
+            }
+
+            void DrawToolBar()
             {
                 GUILayout.Space(15);
                 EditorGUI.BeginChangeCheck();
@@ -216,66 +345,95 @@ namespace Dg
                     }
                 }
                 GUILayout.Space(20);
-                if (mode == Mode.Scatter)
+            }
+
+            void DrawSpawnRadius()
+            {
+                EditorGUI.BeginChangeCheck();
+                float newRadius = EditorGUILayout.Slider(GetText("KRadius"), propRadius.floatValue, minRadius, maxRadius);
+                if (EditorGUI.EndChangeCheck())
                 {
-                    EditorGUI.BeginChangeCheck();
-                    float newRadius = EditorGUILayout.Slider(GetText("KRadius"), propRadius.floatValue, minRadius, maxRadius);
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        propRadius.floatValue = newRadius;
-                        ValidateRandPoints();
-                    }
-                    EditorGUI.BeginChangeCheck();
-                    int newSpawnCount = EditorGUILayout.IntSlider(GetText("KSpawnCount"), propSpawnCount.intValue, 1, 50);
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        propSpawnCount.intValue = newSpawnCount;
-                        GenerateRandValues();
-                        GenerateRandPoints();
-                    }
-                    EditorGUI.BeginChangeCheck();
-                    EditorGUILayout.PropertyField(propSpacing, new GUIContent(GetText("KMinSpacing")));
-                    propSpacing.floatValue = Mathf.Max(0f, propSpacing.floatValue);
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        ValidateRandPoints();
-                    }
+                    propRadius.floatValue = newRadius;
+                    ValidateRandPoints();
                 }
-                else if (mode == Mode.Delete)
+            }
+
+            void DrawDeleteRadius()
+            {
+                EditorGUI.BeginChangeCheck();
+                float newRadius = EditorGUILayout.Slider(GetText("KRadius"), propDeletionRadius.floatValue, minRadius, maxRadius);
+                if (EditorGUI.EndChangeCheck())
                 {
-                    EditorGUI.BeginChangeCheck();
-                    float newRadius = EditorGUILayout.Slider(GetText("KRadius"), propDeletionRadius.floatValue, minRadius, maxRadius);
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        propDeletionRadius.floatValue = newRadius;
-                    }
+                    propDeletionRadius.floatValue = newRadius;
                 }
+            }
+
+            void DrawSpawnCount()
+            {
+                EditorGUI.BeginChangeCheck();
+                int newSpawnCount = EditorGUILayout.IntSlider(GetText("KSpawnCount"), propSpawnCount.intValue, 1, 50);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    propSpawnCount.intValue = newSpawnCount;
+                    RandData.GenerateRandValues(spawnCount);
+                    GenerateRandPoints();
+                }
+            }
+
+            void DrawSpacing()
+            {
+                EditorGUI.BeginChangeCheck();
+                EditorGUILayout.PropertyField(propSpacing, new GUIContent(GetText("KMinSpacing")));
+                propSpacing.floatValue = Mathf.Max(0f, propSpacing.floatValue);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    ValidateRandPoints();
+                }
+            }
+
+            void DrawHeightOffset()
+            {
                 EditorGUILayout.PropertyField(propHeightOffset, new GUIContent(GetText("KHeightOffset")));
-                if (mode != Mode.Snap)
+
+            }
+
+            void DrawAlignWithWorldAxis()
+            {
+                EditorGUILayout.PropertyField(propAlignWithWorldAxis, new GUIContent(GetText("KAlignWithWorld")));
+            }
+
+            void DrawPrefab()
+            {
+                EditorGUI.BeginChangeCheck();
+                prefab = (GameObject)EditorGUILayout.ObjectField(GetText("KPrefab"), prefab, typeof(GameObject), true);
+                if (EditorGUI.EndChangeCheck())
                 {
-                    EditorGUI.BeginChangeCheck();
-                    prefab = (GameObject)EditorGUILayout.ObjectField(GetText("KPrefab"), prefab, typeof(GameObject), true);
-                    if (EditorGUI.EndChangeCheck())
+                    ValidatePrefab();
+                    UpdatePrefabInfo();
+                }
+                if (prefabError != PrefabErrorMode.None)
+                {
+                    using (new GUILayout.VerticalScope(EditorStyles.helpBox))
                     {
-                        ValidatePrefab();
-                        UpdatePrefabInfo();
-                    }
-                    if (prefabError != PrefabErrorMode.None)
-                    {
-                        using (new GUILayout.VerticalScope(EditorStyles.helpBox))
-                        {
-                            EditorGUILayout.LabelField(GetText(errorTable[prefabError]), EditorStyles.wordWrappedLabel);
-                        }
+                        EditorGUILayout.LabelField(GetText(errorTable[prefabError]), EditorStyles.wordWrappedLabel);
                     }
                 }
                 GUILayout.Space(15);
-                if (mode == Mode.Scatter || mode == Mode.Place)
+            }
+
+            void DrawRotationOffset()
+            {
+                EditorGUILayout.PropertyField(propRotationOffset, new GUIContent(GetText("KRotationOffset")));
+                propRotationOffset.floatValue = Mathf.Clamp(propRotationOffset.floatValue, 0f, 360f);
+            }
+
+            void DrawRandom()
+            {
+                isShowRandSetting = EditorGUILayout.Foldout(isShowRandSetting, GetText("KRandSetting"));
+                if (isShowRandSetting)
                 {
-                    EditorGUILayout.PropertyField(propRotationOffset, new GUIContent(GetText("KRotationOffset")));
-                    propRotationOffset.floatValue = Mathf.Clamp(propRotationOffset.floatValue, 0f, 360f);
-                    EditorGUILayout.PropertyField(propKeepRootRotation, new GUIContent(GetText("KRootRotation")));
                     EditorGUILayout.PropertyField(propRandRotation, new GUIContent(GetText("KRandRotation")));
-                    if (randomRotation)
+                    if (randRotation)
                     {
                         using (new EditorGUI.IndentLevelScope())
                         {
@@ -283,42 +441,44 @@ namespace Dg
                             propRandAngle.floatValue = Mathf.Clamp(propRandAngle.floatValue, 0f, 360f);
                         }
                     }
-                    EditorGUILayout.Space(10);
                     EditorGUILayout.PropertyField(propRandScale, new GUIContent(GetText("KRandScale")));
-                    if (randomScale)
+                    if (randScale)
                     {
                         using (new EditorGUI.IndentLevelScope())
                         {
-                            EditorGUILayout.PropertyField(propScaleMin, new GUIContent(GetText("KMinScale")));
-                            propScaleMin.floatValue = Mathf.Max(0.01f, propScaleMin.floatValue);
-                            EditorGUILayout.PropertyField(propScaleMax, new GUIContent(GetText("KMaxScale")));
-                            propScaleMax.floatValue = Mathf.Max(0.01f, propScaleMax.floatValue);
+                            EditorGUILayout.PropertyField(propRandScaleMin, new GUIContent(GetText("KMinScale")));
+                            propRandScaleMin.floatValue = Mathf.Max(0.01f, propRandScaleMin.floatValue);
+                            EditorGUILayout.PropertyField(propRandScaleMax, new GUIContent(GetText("KMaxScale")));
+                            propRandScaleMax.floatValue = Mathf.Max(0.01f, propRandScaleMax.floatValue);
+                        }
+                    }
+                    EditorGUILayout.PropertyField(propRandHeight, new GUIContent(GetText("KRandHeight")));
+                    if (randHeight)
+                    {
+                        using (new EditorGUI.IndentLevelScope())
+                        {
+                            EditorGUILayout.PropertyField(propRandHeightMin, new GUIContent(GetText("KMinHeight")));
+                            EditorGUILayout.PropertyField(propRandHeightMax, new GUIContent(GetText("KMaxHeight")));
                         }
                     }
                 }
                 GUILayout.Space(20);
+            }
+
+            void DrawAdvanced()
+            {
                 isShowAdvancedSetting = EditorGUILayout.Foldout(isShowAdvancedSetting, GetText("KAdvancedSetting"));
                 if (isShowAdvancedSetting)
                 {
                     EditorGUILayout.PropertyField(propColor, new GUIContent(GetText("KRadiusColor")));
+                    EditorGUILayout.PropertyField(propKeepRootRotation, new GUIContent(GetText("KRootRotation")));
                     EditorGUI.BeginChangeCheck();
                     float newTolerance = EditorGUILayout.Slider(GetText("KTolerance"), propScatterHeightTolerance.floatValue, 0f, 8f);
                     if (EditorGUI.EndChangeCheck())
                     {
                         propScatterHeightTolerance.floatValue = newTolerance;
                     }
-
                 }
-            }
-
-            if (so.ApplyModifiedProperties())
-            {
-                SceneView.RepaintAll();
-            }
-            if (Event.current.type == EventType.MouseDown && Event.current.button == 0)   //unfocus the window when click elsewhere 
-            {
-                GUI.FocusControl(null);
-                Repaint();
             }
         }
 
@@ -333,7 +493,6 @@ namespace Dg
             {
                 sceneView.Repaint();
             }
-
             KeyModifierCheck();
             if (mode != Mode.Snap || ctrl)
             {
@@ -429,44 +588,33 @@ namespace Dg
 
         private void HandleModeSpecificActions(RaycastHit hit, List<PointWithOrientation> pointList, Camera cam)
         {
-            Vector3 hitNormal = hit.normal;
-            Vector3 hitTangent = Vector3.Cross(hitNormal, cam.transform.up).normalized;
-            if (hitTangent.sqrMagnitude < 0.001f)
-            {
-                hitTangent = Vector3.Cross(hitNormal, cam.transform.right).normalized;
-            }
-            Vector3 hitBitangent = Vector3.Cross(hitNormal, hitTangent);
+            HitInfo hitInfo = new HitInfo(hit.normal, cam, alignWithWorldAxis);
             hitPoint.position = hit.point;
-            hitPoint.rotation = Quaternion.AngleAxis(rotationOffset, hitNormal) * Quaternion.LookRotation(hitTangent, hitNormal);
+            hitPoint.rotation = Quaternion.AngleAxis(rotationOffset, hitInfo.Normal) * Quaternion.LookRotation(hitInfo.Tangent, hitInfo.Normal);
             if (ctrl || prefabInfo.originalPrefab == null) return;
             switch (mode)
             {
                 case Mode.Delete:
                     {
-                        DrawRange(hit, GetInverseColor(radiusColor), deletionRadius);
-                        PointWithOrientation pointInfo = new PointWithOrientation(hit.point, hitTangent, hitNormal);
+                        DrawRange(hit, radiusColor, deletionRadius);
+                        PointWithOrientation pointInfo = new PointWithOrientation(hit.point, hitInfo.Tangent, hitInfo.Normal);
                         pointList.Add(pointInfo);
                         break;
                     }
                 case Mode.Scatter:
                     {
                         DrawRange(hit, radiusColor, spawnRadius);
-                        DrawAxisGizmo(hit.point, hitTangent, hitNormal, hitBitangent);
+                        DrawAxisGizmo(hit.point, hitInfo.Tangent, hitInfo.Normal, hitInfo.BiTangent);
                         float raycastOffset = GetRaycastOffset();
                         float raycastmaxDistance = GetRaycastMaxDistance();
                         foreach (Vector2 p in randPoints.points)
                         {
-                            Vector3 worldPos = GetWorldPosFromLocal(p, hit.point, hitTangent, hitNormal, hitBitangent, spawnRadius);
-                            Ray pointRay = new Ray(worldPos + hitNormal * raycastOffset, -hitNormal);
-                            if (Physics.Raycast(pointRay, out RaycastHit pointHit, raycastmaxDistance))
+                            Vector3 worldPos = GetWorldPosFromLocal(p, hit.point, hitInfo.Tangent, hitInfo.Normal, hitInfo.BiTangent, spawnRadius);
+                            Ray pointRay = new Ray(worldPos + hitInfo.Normal * raycastOffset, -hitInfo.Normal);
+                            if (Physics.Raycast(pointRay, out RaycastHit scatterHit, raycastmaxDistance))
                             {
-                                Vector3 forward = Vector3.Cross(pointHit.normal, cam.transform.up).normalized;
-                                if (forward.sqrMagnitude < 0.001f)
-                                {
-                                    forward = Vector3.Cross(pointHit.normal, cam.transform.right).normalized;
-                                }
-                                Vector3 up = pointHit.normal;
-                                PointWithOrientation lookdirection = new PointWithOrientation(pointHit.point, forward, up);
+                                HitInfo scatterHitInfo = new HitInfo(scatterHit.normal, cam, alignWithWorldAxis);
+                                PointWithOrientation lookdirection = new PointWithOrientation(scatterHit.point, scatterHitInfo.Tangent, scatterHitInfo.Normal); ;
                                 pointList.Add(lookdirection);
                             }
                         }
@@ -474,9 +622,9 @@ namespace Dg
                     break;
                 case Mode.Place:
                     {
-                        PointWithOrientation pointInfo = new PointWithOrientation(hit.point, hitTangent, hitNormal);
+                        PointWithOrientation pointInfo = new PointWithOrientation(hit.point, hitInfo.Tangent, hitInfo.Normal);
                         pointList.Add(pointInfo);
-                        DrawAxisGizmo(hit.point, hitTangent, hitNormal, hitBitangent);
+                        DrawAxisGizmo(hit.point, hitInfo.Tangent, hitInfo.Normal, hitInfo.BiTangent);
                     }
                     break;
                 default:
@@ -522,7 +670,7 @@ namespace Dg
 
         private void NonDeleteModeInputCheck()
         {
-            if (shift) //スナッププレビュー
+            if (shift) 
             {
                 CheckInputShiftDown();
             }
@@ -555,7 +703,7 @@ namespace Dg
 
         private void ScrollWheelCheck()
         {
-            if (Event.current.type == EventType.ScrollWheel) //オフセット調整
+            if (Event.current.type == EventType.ScrollWheel) 
             {
                 if (shift && (mode == Mode.Scatter || mode == Mode.Delete))
                 {
@@ -653,9 +801,9 @@ namespace Dg
             {
                 Pose point;
                 Quaternion rot = Quaternion.LookRotation(pointList[i].forward, pointList[i].up);
-                if (randomRotation)
+                if (randRotation)
                 {
-                    point.rotation = Quaternion.AngleAxis(GetRandValue(i) * randAngle + rotationOffset, pointList[i].up) * rot;
+                    point.rotation = Quaternion.AngleAxis(RandData.GetRandRotation(i, randAngle) + rotationOffset, pointList[i].up) * rot;
                 }
                 else
                 {
@@ -665,8 +813,6 @@ namespace Dg
                 poseList.Add(point);
             }
         }
-
-        private float GetRandValue(int index) => randValues[index % randValues.Length];
 
         private void ReleaseHotControl()
         {
@@ -681,14 +827,14 @@ namespace Dg
             if (isSnappedMode)
             {
                 Matrix4x4 localToWorld = Matrix4x4.TRS(hitPoint.position, hitPoint.rotation, Vector3.one);
-                DrawMesh(obj, localToWorld, true, false);
+                DrawMesh(obj, localToWorld, true, false, false);
             }
             else
             {
                 for (int i = 0; i < poseList.Count; i++)
                 {
                     Matrix4x4 localToWorld = Matrix4x4.TRS(poseList[i].position, poseList[i].rotation, Vector3.one);
-                    DrawMesh(obj, localToWorld, !keepRootRotation, randomScale, i);
+                    DrawMesh(obj, localToWorld, !keepRootRotation, randScale, randHeight, i);
                 }
             }
         }
@@ -755,12 +901,14 @@ namespace Dg
             }
         }
 
-        private void DrawMesh(GameObject o, Matrix4x4 localToWorld, bool ignoreParentRotation, bool randScale, int randScaleIndex = -1)
+        private void DrawMesh(GameObject o, Matrix4x4 localToWorld, bool ignoreParentRotation, bool randScale, bool randHeight, int randValueIndex = -1)
         {
             if (previewMaterial == null) return;
             previewMaterial.SetPass(0);
             MeshFilter[] filters = o.GetComponentsInChildren<MeshFilter>();
-            Matrix4x4 yAxisOffsetMatrix = Matrix4x4.TRS(new Vector3(0f, heightOffset, 0f), Quaternion.identity, Vector3.one);
+            float height;
+            height = randHeight ? RandData.GetRandHeight(randValueIndex, randHeightMin, randHeightMax) + heightOffset : heightOffset;
+            Matrix4x4 yAxisOffsetMatrix = Matrix4x4.TRS(new Vector3(0f, height, 0f), Quaternion.identity, Vector3.one);
             Matrix4x4 ignoreParentPositionMatrix = Matrix4x4.TRS(-o.transform.position, Quaternion.identity, Vector3.one);
             Matrix4x4 ignoreParentMatrix = ignoreParentPositionMatrix;
             if (ignoreParentRotation)
@@ -775,7 +923,7 @@ namespace Dg
                 Matrix4x4 outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
                 if (randScale)
                 {
-                    float scale = GetRandomScale(randScaleIndex);
+                    float scale = RandData.GetRandScale(randValueIndex, randScaleMin, randScaleMax);
                     outputMatrix = outputMatrix * Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * scale);
                 }
                 Graphics.DrawMeshNow(mesh, outputMatrix);
@@ -800,26 +948,20 @@ namespace Dg
             {
                 GameObject spawnObject = (GameObject)PrefabUtility.InstantiatePrefab(prefabInfo.originalPrefab);
                 Undo.RegisterCreatedObjectUndo(spawnObject, "Spawn Objects");
-                spawnObject.transform.position = poseList[i].position + poseList[i].rotation * new Vector3(0f, heightOffset, 0f);
+                float height;
+                height = randHeight ? RandData.GetRandHeight(i, randHeightMin, randHeightMax) + heightOffset : heightOffset;
+                spawnObject.transform.position = poseList[i].position + poseList[i].rotation * new Vector3(0f, height, 0f);
                 spawnObject.transform.rotation = keepRootRotation ? poseList[i].rotation * prefabInfo.originalPrefab.transform.rotation : poseList[i].rotation;
-                if (randomScale)
+                if (randScale)
                 {
-                    float scale = GetRandomScale(i);
+                    float scale = RandData.GetRandScale(i, randScaleMin, randScaleMax);
                     spawnObject.transform.localScale = spawnObject.transform.localScale * scale;
                 }
             }
             GenerateRandPoints();
-            GenerateRandValues();
+            RandData.GenerateRandValues(spawnCount);
         }
 
-        private void GenerateRandValues()
-        {
-            randValues = new float[spawnCount];
-            for (int i = 0; i < spawnCount; i++)
-            {
-                randValues[i] = Random.value;
-            }
-        }
 
         private void GenerateRandPoints()
         {
@@ -841,12 +983,6 @@ namespace Dg
                 retryCount = 0;
                 randPoints.points.Add(newPoint);
             }
-        }
-
-        private float GetRandomScale(int index)
-        {
-            float rand = GetRandValue(index);
-            return Mathf.Lerp(scaleMin, scaleMax, rand);
         }
 
         private bool IsPointValid(Vector2 point)
@@ -935,7 +1071,9 @@ namespace Dg
                 }
                 if (!isNull)
                 {
-                    Handles.DrawAAPolyLine(GizmoWidth, (Vector3)lastPoint, (Vector3)surfaceHits[i]);
+                    Handles.DrawLine( (Vector3)lastPoint, (Vector3)surfaceHits[i], GizmoWidth);
+
+
                 }
                 else
                 {
@@ -952,7 +1090,15 @@ namespace Dg
             float size = GetObjectBoundingBoxSize(o);
             if (size == -1f) return false;
             float range = 2f * size;
-            return DistancePlanePoint(hitPoint.rotation * Vector3.up, hitPoint.position, o.transform.position) < range;
+            float distanceToSurface = DistancePlanePoint(hitPoint.rotation * Vector3.up, hitPoint.position, o.transform.position);
+            if (randHeight)
+            {
+                return distanceToSurface < range + Mathf.Abs(randHeightMax - randHeightMin); 
+            }
+            else
+            {
+                return distanceToSurface < range;
+            }
         }
 
         private bool IsObjectFromPrefab(GameObject o, GameObject prefab)
@@ -986,14 +1132,9 @@ namespace Dg
             return Mathf.Abs(Vector3.Dot(planeNormal, (point - planePoint)));
         }
 
-        private Color GetInverseColor(Color color)
-        {
-            return new Color(1 - color.r, 1 - color.g, 1 - color.b, color.a);
-        }
-
         private void DrawAxisGizmo(Vector3 position, Vector3 forward, Vector3 up, Vector3 right)
         {
-            float scale = HandleUtility.GetHandleSize(position) * 0.2f;
+            float scale = HandleUtility.GetHandleSize(position) * 0.25f;
             forward = Quaternion.AngleAxis(rotationOffset, up) * forward;
             right = Quaternion.AngleAxis(rotationOffset, up) * right;
             Handles.zTest = CompareFunction.Always;
