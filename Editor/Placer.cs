@@ -11,6 +11,8 @@ using UnityEngine.SceneManagement;
 using static Dg.Placer.RandData;
 using Random = UnityEngine.Random;
 
+
+// ADD LAYER FEATURE
 namespace Dg
 {
     internal class Placer : EditorWindow
@@ -20,7 +22,7 @@ namespace Dg
         {
             GetWindow<Placer>();
         }
-
+        public int surfaceLayer = int.MaxValue;
         public bool on = true;
         public Mode mode = Mode.Scatter;
         public float spawnRadius = 3f;
@@ -28,7 +30,8 @@ namespace Dg
         public float spacing = 0.1f;
         public float deletionRadius = 1f;
         public int spawnCount = 5;
-        public float randAngle = 180f;
+        public float randAngleMin = 0f;
+        public float randAngleMax = 180f;
         public float randScaleMin = 0.9f;
         public float randScaleMax = 1.1f;
         public float randHeightMin = 0f;
@@ -55,7 +58,8 @@ namespace Dg
         private SerializedProperty propSpawnCount;
         private SerializedProperty propHeightOffset;
         private SerializedProperty propRandRotation;
-        private SerializedProperty propRandAngle;
+        private SerializedProperty propRandAngleMin;
+        private SerializedProperty propRandAngleMax;
         private SerializedProperty propRandScale;
         private SerializedProperty propRandScaleMin;
         private SerializedProperty propRandScaleMax;
@@ -157,10 +161,10 @@ namespace Dg
                 return Mathf.Lerp(scaleMin, scaleMax, rand);
             }
 
-            public static float GetRandRotation(int index, float angleMax)
+            public static float GetRandRotation(int index, float angleMin, float angleMax)
             {
                 float rand = GetRandValue(index);
-                return rand * angleMax;
+                return Mathf.Lerp(angleMin, angleMax, rand);
             }
 
             public static float GetRandHeight(int index, float heightMin, float heightMax)
@@ -292,7 +296,8 @@ namespace Dg
             propKeepRootRotation = so.FindProperty(nameof(keepRootRotation));
             propRandScale = so.FindProperty(nameof(randScale));
             propSpacing = so.FindProperty(nameof(spacing));
-            propRandAngle = so.FindProperty(nameof(randAngle));
+            propRandAngleMin = so.FindProperty(nameof(randAngleMin));
+            propRandAngleMax = so.FindProperty(nameof(randAngleMax));
             propRotationOffset = so.FindProperty(nameof(rotationOffset));
             propScatterHeightTolerance = so.FindProperty(nameof(scatterHeightTolerance));
             propAlignWithWorldAxis = so.FindProperty(nameof(alignWithWorldAxis));
@@ -309,6 +314,7 @@ namespace Dg
                 switch (mode)
                 {
                     case Mode.Scatter:
+                        DrawLayerMask();
                         DrawAlignWithWorldAxis();
                         DrawSpawnRadius();
                         DrawSpawnCount();
@@ -319,6 +325,7 @@ namespace Dg
                         DrawRandom();
                         break;
                     case Mode.Place:
+                        DrawLayerMask();
                         DrawAlignWithWorldAxis();
                         DrawSpawnRadius();
                         DrawHeightOffset();
@@ -327,12 +334,14 @@ namespace Dg
                         DrawRandom();
                         break;
                     case Mode.Delete:
+                        DrawLayerMask();
                         DrawAlignWithWorldAxis();
                         DrawDeleteRadius();
                         DrawHeightOffset();
                         DrawPrefab();
                         break;
                     case Mode.Snap:
+                        DrawLayerMask();
                         DrawAlignWithWorldAxis();
                         DrawHeightOffset();
                         DrawRotationOffset();
@@ -340,7 +349,7 @@ namespace Dg
                     default:
                         break;
                 }
-                DrawAdvanced(); 
+                DrawAdvanced();
             }
             if (so.ApplyModifiedProperties())
             {
@@ -462,7 +471,6 @@ namespace Dg
                         EditorGUILayout.LabelField(GetText(errorTable[prefabError]), EditorStyles.wordWrappedLabel);
                     }
                 }
-                GUILayout.Space(15);
             }
 
             void DrawRotationOffset()
@@ -473,6 +481,7 @@ namespace Dg
 
             void DrawRandom()
             {
+                GUILayout.Space(30);
                 isShowRandSetting = EditorGUILayout.Foldout(isShowRandSetting, GetText("KRandSetting"));
                 if (isShowRandSetting)
                 {
@@ -481,8 +490,8 @@ namespace Dg
                     {
                         using (new EditorGUI.IndentLevelScope())
                         {
-                            EditorGUILayout.PropertyField(propRandAngle, new GUIContent(GetText("KEulerAngle")));
-                            propRandAngle.floatValue = Mathf.Clamp(propRandAngle.floatValue, 0f, 360f);
+                            EditorGUILayout.PropertyField(propRandAngleMin, new GUIContent(GetText("KEulerAngleMin")));
+                            EditorGUILayout.PropertyField(propRandAngleMax, new GUIContent(GetText("KEulerAngleMax")));
                         }
                     }
                     EditorGUILayout.PropertyField(propRandScale, new GUIContent(GetText("KRandScale")));
@@ -506,11 +515,11 @@ namespace Dg
                         }
                     }
                 }
-                GUILayout.Space(20);
             }
 
             void DrawAdvanced()
             {
+                EditorGUILayout.Space(30);
                 isShowAdvancedSetting = EditorGUILayout.Foldout(isShowAdvancedSetting, GetText("KAdvancedSetting"));
                 if (isShowAdvancedSetting)
                 {
@@ -523,6 +532,10 @@ namespace Dg
                         propScatterHeightTolerance.floatValue = newTolerance;
                     }
                 }
+            }
+            void DrawLayerMask()
+            {
+                surfaceLayer = LayerMaskField(GetText("KSurfaceLayer"), surfaceLayer);
             }
         }
 
@@ -571,7 +584,7 @@ namespace Dg
         private void RaycastToMousePosition(List<PointWithOrientation> pointList, Camera cam, bool isSnappedMode)
         {
             Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
-            if (!Physics.Raycast(ray, out RaycastHit hit)) return;
+            if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, surfaceLayer)) return;
             RaycastHit finalHit = hit;
             if (!isSnappedMode) //non snap mode
             {
@@ -580,7 +593,7 @@ namespace Dg
                     case Mode.Delete:
                         if (IsObjectFromPrefab(hit.collider.gameObject, prefabInfo.originalPrefab))
                         {
-                            RaycastHit[] hits = Physics.RaycastAll(ray);
+                            RaycastHit[] hits = Physics.RaycastAll(ray, Mathf.Infinity, surfaceLayer);
                             RaycastHit? finalHitNullable = GetValidHitExcludingSamePrefab(hits);
                             finalHit = finalHitNullable ?? finalHit;
                         }
@@ -597,7 +610,7 @@ namespace Dg
                 bool isFromObject = objs.Any(o => IsFromObject(hit.collider.gameObject, o));
                 if (isFromObject)
                 {
-                    RaycastHit[] hits = Physics.RaycastAll(ray);
+                    RaycastHit[] hits = Physics.RaycastAll(ray, Mathf.Infinity, surfaceLayer);
                     RaycastHit? finalHitNullable = GetValidHitExcludingObjects(hits, objs);
                     finalHit = finalHitNullable ?? finalHit;
                 }
@@ -655,7 +668,7 @@ namespace Dg
                         {
                             Vector3 worldPos = GetWorldPosFromLocal(p, hit.point, hitInfo.Tangent, hitInfo.Normal, hitInfo.BiTangent, spawnRadius);
                             Ray pointRay = new Ray(worldPos + hitInfo.Normal * raycastOffset, -hitInfo.Normal);
-                            if (Physics.Raycast(pointRay, out RaycastHit scatterHit, raycastmaxDistance))
+                            if (Physics.Raycast(pointRay, out RaycastHit scatterHit, raycastmaxDistance, surfaceLayer))
                             {
                                 HitInfo scatterHitInfo = new HitInfo(scatterHit.normal, cam, alignWithWorldAxis);
                                 PointWithOrientation lookdirection = new PointWithOrientation(scatterHit.point, scatterHitInfo.Tangent, scatterHitInfo.Normal); ;
@@ -714,7 +727,7 @@ namespace Dg
 
         private void NonDeleteModeInputCheck()
         {
-            if (shift) 
+            if (shift)
             {
                 CheckInputShiftDown();
             }
@@ -747,7 +760,7 @@ namespace Dg
 
         private void ScrollWheelCheck()
         {
-            if (Event.current.type == EventType.ScrollWheel) 
+            if (Event.current.type == EventType.ScrollWheel)
             {
                 if (shift && (mode == Mode.Scatter || mode == Mode.Delete))
                 {
@@ -847,7 +860,7 @@ namespace Dg
                 Quaternion rot = Quaternion.LookRotation(pointList[i].forward, pointList[i].up);
                 if (randRotation)
                 {
-                    point.rotation = Quaternion.AngleAxis(GetRandRotation(i, randAngle) + rotationOffset, pointList[i].up) * rot;
+                    point.rotation = Quaternion.AngleAxis(GetRandRotation(i, randAngleMin, randAngleMax) + rotationOffset, pointList[i].up) * rot;
                 }
                 else
                 {
@@ -937,7 +950,7 @@ namespace Dg
             foreach (GameObject o in objs)
             {
                 IEnumerable<Tuple<Mesh, Matrix4x4>> allMeshes = GetAllMeshes(o);
-                foreach(Tuple<Mesh, Matrix4x4> mesh in allMeshes)
+                foreach (Tuple<Mesh, Matrix4x4> mesh in allMeshes)
                 {
                     Graphics.DrawMeshNow(mesh.Item1, mesh.Item2);
                 }
@@ -1037,7 +1050,7 @@ namespace Dg
             for (int i = 0; i < segment; i++)
             {
                 Ray pointRay = new Ray(points[i] + hit.normal * raycastOffset, -hit.normal);
-                if (Physics.Raycast(pointRay, out RaycastHit pointHit, raycastmaxDistance))
+                if (Physics.Raycast(pointRay, out RaycastHit pointHit, raycastmaxDistance, surfaceLayer))
                 {
                     surfaceHits[i] = pointHit.point;
                 }
@@ -1076,7 +1089,7 @@ namespace Dg
                 }
                 if (!isNull)
                 {
-                    Handles.DrawLine( (Vector3)lastPoint, (Vector3)surfaceHits[i], GizmoWidth);
+                    DrawLine((Vector3)lastPoint, (Vector3)surfaceHits[i], GizmoWidth);
                 }
                 else
                 {
@@ -1088,6 +1101,15 @@ namespace Dg
             Handles.color = Color.white;
         }
 
+        private void DrawLine(Vector3 p1, Vector3 p2, float thickness)
+        {
+#if UNITY_2020_2_OR_NEWER
+            Handles.DrawLine(p1, p2, GizmoWidth);
+#else
+            Handles.DrawAAPolyLine(GizmoWidth, p1, p2);
+#endif
+        }
+
         private bool IsWithinDeletionHeightRange(GameObject o)
         {
             float size = GetObjectBoundingBoxSize(o);
@@ -1097,7 +1119,7 @@ namespace Dg
             float distanceToSurface = DistancePlanePoint(hitPoint.rotation * Vector3.up, hitPoint.position, o.transform.position);
             if (randHeight)
             {
-                return distanceToSurface < range + Mathf.Abs(randHeightMax - randHeightMin); 
+                return distanceToSurface < range + Mathf.Abs(randHeightMax - randHeightMin);
             }
             else
             {
@@ -1275,6 +1297,40 @@ namespace Dg
             return parentPath;
         }
 
+        private int LayerMaskField(string label, int layerMask)
+        {
+            List<string> layers = new List<string>();
+            List<int> layerNumbers = new List<int>();
+
+            for (int i = 0; i < 32; i++)
+            {
+                string layerName = LayerMask.LayerToName(i);
+                if (!string.IsNullOrEmpty(layerName))
+                {
+                    layers.Add(layerName);
+                    layerNumbers.Add(i);
+                }
+            }
+
+            int maskWithoutEmpty = 0;
+            for (int i = 0; i < layerNumbers.Count; i++)
+            {
+                if (((1 << layerNumbers[i]) & layerMask) != 0)
+                {
+                    maskWithoutEmpty |= 1 << i;
+                }
+            }
+
+            maskWithoutEmpty = EditorGUILayout.MaskField(label, maskWithoutEmpty, layers.ToArray());
+            int mask = 0;
+            for (int i = 0; i < layerNumbers.Count; i++)
+            {
+                if ((maskWithoutEmpty & (1 << i)) !=0)
+                    mask |= 1 << layerNumbers[i];
+            }
+            layerMask = mask;
+            return layerMask;
+        }
         private string GetText(string key) => LanguageSetting.GetText(key);
 
     }

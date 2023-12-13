@@ -13,13 +13,14 @@ KPrefab,Prefab,プレハブ
 KRotationOffset,Rotation Offset,回転オフセット
 KRootRotation,Keep Root Rotation,ルート回転保持
 KRandRotation,Random Rotation,ランダム回転
-KEulerAngle,Euler Angle,オイラー角
+KEulerAngleMin,Min Euler Angle,最小オイラー角
+KEulerAngleMax,Max Euler Angle,最大オイラー角 
 KRandScale,Random Scale,ランダムスケール
 KMinScale,Min Scale,最小スケール
 KMaxScale,Max Scale,最大スケール
 KNotPrefabError,Object must be an instance of a prefab,オブジェクトはプレハブのインスタンスである必要があります
 KNotOuterMostPrefabError,Object must be the outer most prefab,オブジェクトは一番外側のプレハブである必要があります
-KAdvancedSetting,Advanced Setting,詳細設定
+KAdvancedSetting,Additional Setting,詳細設定
 KRadiusColor,Circle Color,円の色
 KTolerance,Scatter Height Tolerance,散布高さの許容度
 KScatter,Scatter,散布
@@ -31,3 +32,4 @@ KAlignWithWorld,Align With World Axis,ワールド軸に合わせる
 KRandHeight,Random Height,ランダム高さ
 KMinHeight,Min Height,最小高さ
 KMaxHeight,Max Height,最大高さ
+KSurfaceLayer,Placement Layer,選択レイヤーのみに配置
