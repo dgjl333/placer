@@ -12,7 +12,6 @@ using static Dg.Placer.RandData;
 using Random = UnityEngine.Random;
 
 
-// ADD LAYER FEATURE
 namespace Dg
 {
     internal class Placer : EditorWindow
@@ -97,7 +96,6 @@ namespace Dg
             {
                 public static List<Vector2> points;
                 public static float minDistance;
-
                 public static void GenerateRandPoints(int count, float spawnRadius, float spacing)
                 {
                     int retryCount = 0;
@@ -108,10 +106,7 @@ namespace Dg
                         Vector2 newPoint = Random.insideUnitCircle;
                         while (!IsPointValid(newPoint, spawnRadius, spacing))
                         {
-                            if (retryCount > 20)
-                            {
-                                return;
-                            }
+                            if (retryCount > 20) return;
                             newPoint = Random.insideUnitCircle;
                             retryCount++;
                         }
@@ -228,7 +223,6 @@ namespace Dg
             }
         }
 
-
         public enum PrefabErrorMode
         {
             None,
@@ -244,7 +238,7 @@ namespace Dg
             Snap
         }
 
-        private Dictionary<PrefabErrorMode, string> errorTable = new Dictionary<PrefabErrorMode, string>()
+        private Dictionary<PrefabErrorMode, string> errorText = new Dictionary<PrefabErrorMode, string>()
         {
             { PrefabErrorMode.NotAnPrefab, "KNotPrefabError" },
             { PrefabErrorMode.NotOuterMostPrefab, "KNotOuterMostPrefabError" }
@@ -311,7 +305,9 @@ namespace Dg
             if (on)
             {
                 DrawToolBar();
+                DrawHelperBox();
                 switch (mode)
+
                 {
                     case Mode.Scatter:
                         DrawLayerMask();
@@ -397,13 +393,12 @@ namespace Dg
                         OnDeleteMode();
                     }
                 }
-                GUILayout.Space(20);
             }
 
             void DrawSpawnRadius()
             {
                 EditorGUI.BeginChangeCheck();
-                float newRadius = EditorGUILayout.Slider(GetText("KRadius"), propRadius.floatValue, minRadius, maxRadius);
+                float newRadius = EditorGUILayout.Slider(new GUIContent(GetText("KRadius"), GetText("KRadiusTT")), propRadius.floatValue, minRadius, maxRadius);
                 if (EditorGUI.EndChangeCheck())
                 {
                     propRadius.floatValue = newRadius;
@@ -414,7 +409,7 @@ namespace Dg
             void DrawDeleteRadius()
             {
                 EditorGUI.BeginChangeCheck();
-                float newRadius = EditorGUILayout.Slider(GetText("KRadius"), propDeletionRadius.floatValue, minRadius, maxRadius);
+                float newRadius = EditorGUILayout.Slider(new GUIContent(GetText("KRadius"), GetText("KRadiusTT")), propDeletionRadius.floatValue, minRadius, maxRadius);
                 if (EditorGUI.EndChangeCheck())
                 {
                     propDeletionRadius.floatValue = newRadius;
@@ -424,7 +419,7 @@ namespace Dg
             void DrawSpawnCount()
             {
                 EditorGUI.BeginChangeCheck();
-                int newSpawnCount = EditorGUILayout.IntSlider(GetText("KSpawnCount"), propSpawnCount.intValue, 1, 50);
+                int newSpawnCount = EditorGUILayout.IntSlider(new GUIContent(GetText("KSpawnCount"), GetText("KSpawnCountTT")), propSpawnCount.intValue, 1, 50);
                 if (EditorGUI.EndChangeCheck())
                 {
                     propSpawnCount.intValue = newSpawnCount;
@@ -436,7 +431,7 @@ namespace Dg
             void DrawSpacing()
             {
                 EditorGUI.BeginChangeCheck();
-                EditorGUILayout.PropertyField(propSpacing, new GUIContent(GetText("KMinSpacing")));
+                EditorGUILayout.PropertyField(propSpacing, new GUIContent(GetText("KMinSpacing"), GetText("KSpawnCountTT")));
                 propSpacing.floatValue = Mathf.Max(0f, propSpacing.floatValue);
                 if (EditorGUI.EndChangeCheck())
                 {
@@ -446,19 +441,19 @@ namespace Dg
 
             void DrawHeightOffset()
             {
-                EditorGUILayout.PropertyField(propHeightOffset, new GUIContent(GetText("KHeightOffset")));
+                EditorGUILayout.PropertyField(propHeightOffset, new GUIContent(GetText("KHeightOffset"), GetText("KHeightOffsetTT")));
 
             }
 
             void DrawAlignWithWorldAxis()
             {
-                EditorGUILayout.PropertyField(propAlignWithWorldAxis, new GUIContent(GetText("KAlignWithWorld")));
+                EditorGUILayout.PropertyField(propAlignWithWorldAxis, new GUIContent(GetText("KAlignWithWorld"), GetText("KAlignWithWorldTT")));
             }
 
             void DrawPrefab()
             {
                 EditorGUI.BeginChangeCheck();
-                prefab = (GameObject)EditorGUILayout.ObjectField(GetText("KPrefab"), prefab, typeof(GameObject), true);
+                prefab = (GameObject)EditorGUILayout.ObjectField(new GUIContent(GetText("KPrefab"), GetText("KPrefabTT")), prefab, typeof(GameObject), true);
                 if (EditorGUI.EndChangeCheck())
                 {
                     ValidatePrefab();
@@ -468,14 +463,14 @@ namespace Dg
                 {
                     using (new GUILayout.VerticalScope(EditorStyles.helpBox))
                     {
-                        EditorGUILayout.LabelField(GetText(errorTable[prefabError]), EditorStyles.wordWrappedLabel);
+                        EditorGUILayout.LabelField(GetText(errorText[prefabError]), EditorStyles.wordWrappedLabel);
                     }
                 }
             }
 
             void DrawRotationOffset()
             {
-                EditorGUILayout.PropertyField(propRotationOffset, new GUIContent(GetText("KRotationOffset")));
+                EditorGUILayout.PropertyField(propRotationOffset, new GUIContent(GetText("KRotationOffset"), GetText("KRotationOffsetTT")));
                 propRotationOffset.floatValue = Mathf.Clamp(propRotationOffset.floatValue, 0f, 360f);
             }
 
@@ -523,19 +518,48 @@ namespace Dg
                 isShowAdvancedSetting = EditorGUILayout.Foldout(isShowAdvancedSetting, GetText("KAdvancedSetting"));
                 if (isShowAdvancedSetting)
                 {
-                    EditorGUILayout.PropertyField(propColor, new GUIContent(GetText("KRadiusColor")));
-                    EditorGUILayout.PropertyField(propKeepRootRotation, new GUIContent(GetText("KRootRotation")));
+                    EditorGUILayout.PropertyField(propColor, new GUIContent(GetText("KRadiusColor"), GetText("KRadiusColorTT")));
+                    EditorGUILayout.PropertyField(propKeepRootRotation, new GUIContent(GetText("KRootRotation"), GetText("KRootRotationTT")));
                     EditorGUI.BeginChangeCheck();
-                    float newTolerance = EditorGUILayout.Slider(GetText("KTolerance"), propScatterHeightTolerance.floatValue, 0f, 8f);
+                    float newTolerance = EditorGUILayout.Slider(new GUIContent(GetText("KTolerance"), GetText("KToleranceTT")), propScatterHeightTolerance.floatValue, 0f, 8f);
                     if (EditorGUI.EndChangeCheck())
                     {
                         propScatterHeightTolerance.floatValue = newTolerance;
                     }
                 }
             }
+
             void DrawLayerMask()
             {
-                surfaceLayer = LayerMaskField(GetText("KSurfaceLayer"), surfaceLayer);
+                surfaceLayer = LayerMaskField(new GUIContent(GetText("KSurfaceLayer"), GetText("KSurfaceLayerTT")), surfaceLayer);
+            }
+
+            void DrawHelperBox()
+            {
+                using (new GUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    string text = null;
+                    switch (mode)
+                    {
+                        case Mode.Scatter:
+                            text = GetText("KScatterHelper");
+                            break;
+                        case Mode.Place:
+                            text = GetText("KPlaceHelper");
+                            break;
+                        case Mode.Delete:
+                            text = GetText("KDeleteHelper");
+                            break;
+                        case Mode.Snap:
+                            text = GetText("KSnapHelper");
+                            break;
+                        default:
+                            break;
+
+                    }
+                    EditorGUILayout.LabelField(text, EditorStyles.wordWrappedMiniLabel);
+                }
+                GUILayout.Space(20);
             }
         }
 
@@ -931,8 +955,12 @@ namespace Dg
 
         private IEnumerable<GameObject> FindAllInstancesOfPrefab(GameObject prefab)
         {
+            Scene activeScene = SceneManager.GetActiveScene();
+#if UNITY_2021_2_OR_NEWER
+            return PrefabUtility.FindAllInstancesOfPrefab(prefab, activeScene);
+#else
             List<GameObject> foundInstances = new List<GameObject>();
-            GameObject[] allObjects = SceneManager.GetActiveScene().GetRootGameObjects();
+            GameObject[] allObjects = activeScene.GetRootGameObjects();
             foreach (GameObject obj in allObjects)
             {
                 if (PrefabUtility.GetCorrespondingObjectFromOriginalSource(obj) == prefab)
@@ -941,6 +969,7 @@ namespace Dg
                 }
             }
             return foundInstances;
+#endif
         }
 
         private void DrawDeletionPreviews(IEnumerable<GameObject> objs)
@@ -1012,14 +1041,13 @@ namespace Dg
             {
                 GameObject spawnObject = (GameObject)PrefabUtility.InstantiatePrefab(prefabInfo.originalPrefab);
                 Undo.RegisterCreatedObjectUndo(spawnObject, "Spawn Objects");
-                float height;
-                height = randHeight ? GetRandHeight(i, randHeightMin, randHeightMax) + heightOffset : heightOffset;
+                float height = randHeight ? GetRandHeight(i, randHeightMin, randHeightMax) + heightOffset : heightOffset;
                 spawnObject.transform.position = poseList[i].position + poseList[i].rotation * new Vector3(0f, height, 0f);
                 spawnObject.transform.rotation = keepRootRotation ? poseList[i].rotation * prefabInfo.originalPrefab.transform.rotation : poseList[i].rotation;
                 if (randScale)
                 {
                     float scale = GetRandScale(i, randScaleMin, randScaleMax);
-                    spawnObject.transform.localScale = spawnObject.transform.localScale * scale;
+                    spawnObject.transform.localScale *= scale;
                 }
             }
             RandPoints.GenerateRandPoints(spawnCount, spawnRadius, spacing);
@@ -1297,7 +1325,7 @@ namespace Dg
             return parentPath;
         }
 
-        private int LayerMaskField(string label, int layerMask)
+        private int LayerMaskField(GUIContent content, int layerMask)
         {
             List<string> layers = new List<string>();
             List<int> layerNumbers = new List<int>();
@@ -1317,19 +1345,20 @@ namespace Dg
             {
                 if (((1 << layerNumbers[i]) & layerMask) != 0)
                 {
-                    maskWithoutEmpty |= 1 << i;
+                    {
+                        maskWithoutEmpty |= 1 << i;
+                    }
                 }
             }
 
-            maskWithoutEmpty = EditorGUILayout.MaskField(label, maskWithoutEmpty, layers.ToArray());
+            maskWithoutEmpty = EditorGUILayout.MaskField(content, maskWithoutEmpty, layers.ToArray());
             int mask = 0;
             for (int i = 0; i < layerNumbers.Count; i++)
             {
                 if ((maskWithoutEmpty & (1 << i)) !=0)
                     mask |= 1 << layerNumbers[i];
             }
-            layerMask = mask;
-            return layerMask;
+            return mask;
         }
         private string GetText(string key) => LanguageSetting.GetText(key);
 

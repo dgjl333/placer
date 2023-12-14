@@ -38,7 +38,7 @@ namespace Dg
                 {
                     string[] text = reader.ReadLine().Split(',');
                     string key = text[0];
-                    translations[key] = text[langIndex];
+                    translations[key] = text[langIndex].Replace("\\n","\n");
                 }
             }
         }

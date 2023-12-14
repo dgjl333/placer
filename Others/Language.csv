@@ -6,12 +6,19 @@ KPlace,Place,配置
 KDelete,Delete,削除
 KSnap,Snap,スナップ
 KRadius,Radius,半径
+KRadiusTT,[Shift + Mouse Scroll] Specify the radius of area,[Shift + マウスホイール] 範囲の半径を指定します
 KSpawnCount,Spawn Count,生成数
+KSpawnCountTT,Specify the number of objects to spawn,生成するオブジェクトの数を指定します
 KMinSpacing,Min Spacing,最小間隔
+KMinSpacingTT,The minimum distance between points,点と点の最小距離
 KHeightOffset,Height Offset,高さオフセット
+KHeightOffsetTT,[Alt + Mouse Scroll] Specify a height offset from the surface,[Alt + マウスホイール] 表面からの高さオフセットを指定します
 KPrefab,Prefab,プレハブ
+KPrefabTT,Specify which prefab to spawn (dragging the object from the hierachy is possible),生成するプレハブを指定します（ヒエラルキーからオブジェクトをドラッグすることも可能です）
 KRotationOffset,Rotation Offset,回転オフセット
+KRotationOffsetTT,specify a rotation offset from the initial rotation,初期の回転からの回転オフセットを指定します
 KRootRotation,Keep Root Rotation,ルート回転保持
+KRootRotationTT,Keep the rotation from the prefab itself,プレハブ自身の回転を保持しますか
 KRandRotation,Random Rotation,ランダム回転
 KEulerAngleMin,Min Euler Angle,最小オイラー角
 KEulerAngleMax,Max Euler Angle,最大オイラー角 
@@ -22,14 +29,22 @@ KNotPrefabError,Object must be an instance of a prefab,オブジェクトはプ�
 KNotOuterMostPrefabError,Object must be the outer most prefab,オブジェクトは一番外側のプレハブである必要があります
 KAdvancedSetting,Additional Setting,詳細設定
 KRadiusColor,Circle Color,円の色
+KRadiusColorTT,Specify the color of gizmo,ギズモの色を指定します
 KTolerance,Scatter Height Tolerance,散布高さの許容度
+KToleranceTT,Specify how much height difference is allowed in scatter mode (gizmo turns into dotted line when out of range),散布モードで許容される高さの差を指定します（範囲外の場合、ギズモは点線に変わります）
 KScatter,Scatter,散布
 KPlace,Place,配置
 KDelete,Delete,削除
 KSnap,Snap,スナップ
 KRandSetting,Randomness Setting,ランダム要素設定
 KAlignWithWorld,Align With World Axis,ワールド軸に合わせる
+KAlignWithWorldTT,Whether align the object with world axis or viewport camera axis,オブジェクトをワールド座標に合わせるか、ビューポートのカメラ座標に合わせるか
 KRandHeight,Random Height,ランダム高さ
 KMinHeight,Min Height,最小高さ
 KMaxHeight,Max Height,最大高さ
-KSurfaceLayer,Placement Layer,選択レイヤーのみに配置
+KSurfaceLayer,Placement Layer,配置レイヤー
+KSurfaceLayerTT,Specify which layer to place objects,選択されたレイヤーのみに配置します
+KScatterHelper,Hold Shift and click to scatter objects\n\nHold Ctrl and click to snap the current selected objects,Shiftキーを押しながらクリックすると、オブジェクトを散布します\n\nCtrlキーを押しながらクリックすると、選択中のオブジェクトをスナップします
+KPlaceHelper,Hold Shift and click to place object\n\nHold Ctrl and click to snap the current selected objects,Shiftキーを押しながらクリックすると、オブジェクトを配置します\n\nCtrlキーを押しながらクリックすると、選択中のオブジェクトをスナップします
+KDeleteHelper,Hold Shift and click to erase objects\n\nHold Ctrl and click to snap the current selected objects,Shiftキーを押しながらクリックすると、オブジェクトを削除します\n\nCtrlキーを押しながらクリックすると、選択中のオブジェクトをスナップします
+KSnapHelper,Hold Ctrl and click to snap the current selected objects,Ctrlキーを押しながらクリックすると、選択中のオブジェクトをスナップします
