@@ -150,26 +150,13 @@ namespace Dg
                 }
             }
 
-            public static float GetRandScale(int index, float scaleMin, float scaleMax)
+            public static float GetRandValue(int index, float valueMin, float valueMax)
             {
-                float rand = GetRandValue(index);
-                return Mathf.Lerp(scaleMin, scaleMax, rand);
+                float rand = randValues[index % randValues.Length];
+                return Mathf.Lerp(valueMin, valueMax, rand);
             }
-
-            public static float GetRandRotation(int index, float angleMin, float angleMax)
-            {
-                float rand = GetRandValue(index);
-                return Mathf.Lerp(angleMin, angleMax, rand);
-            }
-
-            public static float GetRandHeight(int index, float heightMin, float heightMax)
-            {
-                float rand = GetRandValue(index);
-                return Mathf.Lerp(heightMin, heightMax, rand);
-            }
-
-            private static float GetRandValue(int index) => randValues[index % randValues.Length];
         }
+
         private struct HitInfo
         {
             public Vector3 Tangent { get; private set; }
@@ -242,6 +229,11 @@ namespace Dg
         {
             { PrefabErrorMode.NotAnPrefab, "KNotPrefabError" },
             { PrefabErrorMode.NotOuterMostPrefab, "KNotOuterMostPrefabError" }
+        };
+
+        private string[] toolHelper = new string[]
+        {
+            "KScatterHelper", "KPlaceHelper", "KDeleteHelper", "KSnapHelper"
         };
 
         private void Awake()
@@ -431,7 +423,7 @@ namespace Dg
             void DrawSpacing()
             {
                 EditorGUI.BeginChangeCheck();
-                EditorGUILayout.PropertyField(propSpacing, new GUIContent(GetText("KMinSpacing"), GetText("KSpawnCountTT")));
+                EditorGUILayout.PropertyField(propSpacing, new GUIContent(GetText("KMinSpacing"), GetText("KMinSpacingTT")));
                 propSpacing.floatValue = Mathf.Max(0f, propSpacing.floatValue);
                 if (EditorGUI.EndChangeCheck())
                 {
@@ -536,27 +528,10 @@ namespace Dg
 
             void DrawHelperBox()
             {
+
                 using (new GUILayout.VerticalScope(EditorStyles.helpBox))
                 {
-                    string text = null;
-                    switch (mode)
-                    {
-                        case Mode.Scatter:
-                            text = GetText("KScatterHelper");
-                            break;
-                        case Mode.Place:
-                            text = GetText("KPlaceHelper");
-                            break;
-                        case Mode.Delete:
-                            text = GetText("KDeleteHelper");
-                            break;
-                        case Mode.Snap:
-                            text = GetText("KSnapHelper");
-                            break;
-                        default:
-                            break;
-
-                    }
+                    string text = GetText(toolHelper[(int)mode]);
                     EditorGUILayout.LabelField(text, EditorStyles.wordWrappedMiniLabel);
                 }
                 GUILayout.Space(20);
@@ -884,7 +859,7 @@ namespace Dg
                 Quaternion rot = Quaternion.LookRotation(pointList[i].forward, pointList[i].up);
                 if (randRotation)
                 {
-                    point.rotation = Quaternion.AngleAxis(GetRandRotation(i, randAngleMin, randAngleMax) + rotationOffset, pointList[i].up) * rot;
+                    point.rotation = Quaternion.AngleAxis(GetRandValue(i, randAngleMin, randAngleMax) + rotationOffset, pointList[i].up) * rot;
                 }
                 else
                 {
@@ -931,10 +906,7 @@ namespace Dg
                     GameObject obj = c.gameObject;
                     if (prefabInfo.originalPrefab == PrefabUtility.GetCorrespondingObjectFromSource(obj))
                     {
-                        if (IsWithinDeletionHeightRange(obj))
-                        {
-                            objsList.Add(obj);
-                        }
+                        objsList.Add(obj);
                     }
                 }
             }
@@ -944,7 +916,7 @@ namespace Dg
                 {
                     if (obj == null) continue;   // prevent error when deleting 
                     float distance = Vector3.Distance(obj.transform.position, hitPoint.position);
-                    if (distance < deletionRadius && IsWithinDeletionHeightRange(obj))
+                    if (distance < deletionRadius)
                     {
                         objsList.Add(obj);
                     }
@@ -992,7 +964,7 @@ namespace Dg
             previewMaterial.SetPass(0);
             IEnumerable<Tuple<Mesh, Matrix4x4>> allMeshes = GetAllMeshes(o);
             float height;
-            height = randHeight ? GetRandHeight(randValueIndex, randHeightMin, randHeightMax) + heightOffset : heightOffset;
+            height = randHeight ? GetRandValue(randValueIndex, randHeightMin, randHeightMax) + heightOffset : heightOffset;
             Matrix4x4 yAxisOffsetMatrix = Matrix4x4.TRS(new Vector3(0f, height, 0f), Quaternion.identity, Vector3.one);
             Matrix4x4 ignoreParentPositionMatrix = Matrix4x4.TRS(-o.transform.position, Quaternion.identity, Vector3.one);
             Matrix4x4 ignoreParentMatrix = ignoreParentPositionMatrix;
@@ -1007,7 +979,7 @@ namespace Dg
                 Matrix4x4 outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
                 if (randScale)
                 {
-                    float scale = GetRandScale(randValueIndex, randScaleMin, randScaleMax);
+                    float scale = GetRandValue(randValueIndex, randScaleMin, randScaleMax);
                     outputMatrix = outputMatrix * Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * scale);
                 }
                 Graphics.DrawMeshNow(mesh.Item1, outputMatrix);
@@ -1041,12 +1013,12 @@ namespace Dg
             {
                 GameObject spawnObject = (GameObject)PrefabUtility.InstantiatePrefab(prefabInfo.originalPrefab);
                 Undo.RegisterCreatedObjectUndo(spawnObject, "Spawn Objects");
-                float height = randHeight ? GetRandHeight(i, randHeightMin, randHeightMax) + heightOffset : heightOffset;
+                float height = randHeight ? GetRandValue(i, randHeightMin, randHeightMax) + heightOffset : heightOffset;
                 spawnObject.transform.position = poseList[i].position + poseList[i].rotation * new Vector3(0f, height, 0f);
                 spawnObject.transform.rotation = keepRootRotation ? poseList[i].rotation * prefabInfo.originalPrefab.transform.rotation : poseList[i].rotation;
                 if (randScale)
                 {
-                    float scale = GetRandScale(i, randScaleMin, randScaleMax);
+                    float scale = GetRandValue(i, randScaleMin, randScaleMax);
                     spawnObject.transform.localScale *= scale;
                 }
             }
@@ -1138,23 +1110,6 @@ namespace Dg
 #endif
         }
 
-        private bool IsWithinDeletionHeightRange(GameObject o)
-        {
-            float size = GetObjectBoundingBoxSize(o);
-            if (size == -1f) return false;
-            if (size == 0f) return true;
-            float range = 2f * size;
-            float distanceToSurface = DistancePlanePoint(hitPoint.rotation * Vector3.up, hitPoint.position, o.transform.position);
-            if (randHeight)
-            {
-                return distanceToSurface < range + Mathf.Abs(randHeightMax - randHeightMin);
-            }
-            else
-            {
-                return distanceToSurface < range;
-            }
-        }
-
         private bool IsObjectFromPrefab(GameObject o, GameObject prefab)
         {
             GameObject rootObject = PrefabUtility.GetOutermostPrefabInstanceRoot(o);
@@ -1179,11 +1134,6 @@ namespace Dg
             {
                 return rootObject.GetInstanceID() == sourceObj.GetInstanceID();
             }
-        }
-
-        private float DistancePlanePoint(Vector3 planeNormal, Vector3 planePoint, Vector3 point)
-        {
-            return Mathf.Abs(Vector3.Dot(planeNormal, (point - planePoint)));
         }
 
         private void DrawAxisGizmo(Vector3 position, Vector3 forward, Vector3 up, Vector3 right)
@@ -1345,9 +1295,7 @@ namespace Dg
             {
                 if (((1 << layerNumbers[i]) & layerMask) != 0)
                 {
-                    {
-                        maskWithoutEmpty |= 1 << i;
-                    }
+                    maskWithoutEmpty |= 1 << i;
                 }
             }
 
@@ -1355,8 +1303,10 @@ namespace Dg
             int mask = 0;
             for (int i = 0; i < layerNumbers.Count; i++)
             {
-                if ((maskWithoutEmpty & (1 << i)) !=0)
+                if ((maskWithoutEmpty & (1 << i)) != 0)
+                {
                     mask |= 1 << layerNumbers[i];
+                }    
             }
             return mask;
         }

@@ -16,7 +16,7 @@ KHeightOffsetTT,[Alt + Mouse Scroll] Specify a height offset from the surface,[A
 KPrefab,Prefab,プレハブ
 KPrefabTT,Specify which prefab to spawn (dragging the object from the hierachy is possible),生成するプレハブを指定します（ヒエラルキーからオブジェクトをドラッグすることも可能です）
 KRotationOffset,Rotation Offset,回転オフセット
-KRotationOffsetTT,specify a rotation offset from the initial rotation,初期の回転からの回転オフセットを指定します
+KRotationOffsetTT,Specify a rotation offset from the initial rotation,初期の回転からの回転オフセットを指定します
 KRootRotation,Keep Root Rotation,ルート回転保持
 KRootRotationTT,Keep the rotation from the prefab itself,プレハブ自身の回転を保持しますか
 KRandRotation,Random Rotation,ランダム回転
