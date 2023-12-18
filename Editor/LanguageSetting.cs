@@ -22,8 +22,8 @@ namespace Dg
         [InitializeOnLoadMethod]
         private static void Init()
         {
-            csvPath = AssetDatabase.GUIDToAssetPath("9496dd598027c3047b8233228b4007cb");
-            settingPath = AssetDatabase.GUIDToAssetPath("a14632402852e6c46b31eb8ae2607b0b");
+            csvPath = AssetManager.GetLangCSVPath();
+            settingPath = AssetManager.GetLangSettingPath();
             LoadSetting();
             LoadTexts();
         }

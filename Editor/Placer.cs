@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Experimental.SceneManagement;
@@ -9,6 +8,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 using static Dg.Placer.RandData;
+using static Dg.LanguageSetting;
 using Random = UnityEngine.Random;
 
 
@@ -43,6 +43,8 @@ namespace Dg
         public bool randHeight = false;
         public bool alignWithWorldAxis = true;
         public Color radiusColor = new Color(0.866f, 0.160f, 0.498f, 1f);
+        public bool isShowAdvancedSetting = false;
+        public bool isShowRandSetting = true;
 
         private GameObject prefab;
         private Material previewMaterial;
@@ -70,8 +72,6 @@ namespace Dg
         private SerializedProperty propAlignWithWorldAxis;
         private SerializedProperty propRandHeight;
 
-        public bool isShowAdvancedSetting = false;
-        public bool isShowRandSetting = true;
         [SerializeField] private string prefabLocation = null;
         private PrefabErrorMode prefabError = PrefabErrorMode.None;
         private Pose hitPoint;
@@ -87,7 +87,7 @@ namespace Dg
         private readonly float maxRadius = 50f;
         private readonly float minOffset = -5f;
         private readonly float maxOffset = 5f;
-        private readonly float GizmoWidth = 3f;
+        private readonly float GizmoWidth = 2f;
         private readonly int discSegment = 64;
 
         public static class RandData
@@ -240,7 +240,7 @@ namespace Dg
         {
             if (Camera.main != null)
             {
-                Camera.main.depthTextureMode = DepthTextureMode.Depth;   //shader need depth texture
+                Camera.main.depthTextureMode |= DepthTextureMode.Depth;   //shader need depth texture
             }
             LoadData();
             LoadPrefab();
@@ -1106,7 +1106,7 @@ namespace Dg
 #if UNITY_2020_2_OR_NEWER
             Handles.DrawLine(p1, p2, GizmoWidth);
 #else
-            Handles.DrawAAPolyLine(GizmoWidth, p1, p2);
+            Handles.DrawAAPolyLine(GizmoWidth * 2f, p1, p2);
 #endif
         }
 
@@ -1152,30 +1152,15 @@ namespace Dg
 
         private void LoadAssets()
         {
-            string path = GetPath();
-            previewMaterial = (Material)AssetDatabase.LoadAssetAtPath(path + "/Material/Preview.mat", typeof(Material));
-            deletionMaterial = (Material)AssetDatabase.LoadAssetAtPath(path + "/Material/Deletion.mat", typeof(Material));
-            bool isDarkTheme = EditorGUIUtility.isProSkin;
-            if (isDarkTheme)
+            previewMaterial = AssetManager.GetPreviewMaterial();
+            deletionMaterial = AssetManager.GetDeletionMaterial();
+            toolIcons = new GUIContent[]
             {
-                toolIcons = new GUIContent[]
-                {
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/brush_dark.png", typeof(Texture)), GetText("KScatter")),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/pen_dark.png", typeof(Texture)), GetText("KPlace")),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/rubber_dark.png", typeof(Texture)), GetText("KDelete")),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/snap_dark.png", typeof(Texture)), GetText("KSnap")),
-                };
-            }
-            else
-            {
-                toolIcons = new GUIContent[]
-                {
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/brush_light.png", typeof(Texture)), GetText("KScatter")),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/pen_light.png", typeof(Texture)), GetText("KPlace")),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/rubber_light.png", typeof(Texture)), GetText("KDelete")),
-                new GUIContent((Texture)AssetDatabase.LoadAssetAtPath(path + "/Texture/snap_light.png", typeof(Texture)), GetText("KSnap")),
-                };
-            }
+            new GUIContent(AssetManager.GetBrushTexture(), GetText("KScatter")),
+            new GUIContent(AssetManager.GetPenTexture(), GetText("KPlace")),
+            new GUIContent(AssetManager.GetEraserTexture(), GetText("KDelete")),
+            new GUIContent(AssetManager.GetSnapTexture(), GetText("KSnap")),
+            };
         }
 
         private void LoadPrefab()
@@ -1268,13 +1253,6 @@ namespace Dg
             UpdateDeletionObjectsList();
         }
 
-        private string GetPath()
-        {
-            string path = Path.GetDirectoryName(AssetDatabase.GetAssetPath(MonoScript.FromScriptableObject(this)));
-            string parentPath = Path.GetDirectoryName(path);
-            return parentPath;
-        }
-
         private int LayerMaskField(GUIContent content, int layerMask)
         {
             List<string> layers = new List<string>();
@@ -1310,7 +1288,5 @@ namespace Dg
             }
             return mask;
         }
-        private string GetText(string key) => LanguageSetting.GetText(key);
-
     }
 }
