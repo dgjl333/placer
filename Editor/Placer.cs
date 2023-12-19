@@ -8,7 +8,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 using static Dg.Placer.RandData;
-using static Dg.LanguageSetting;
+using static Dg.SettingManager;
 using Random = UnityEngine.Random;
 
 
@@ -45,6 +45,7 @@ namespace Dg
         public Color radiusColor = new Color(0.866f, 0.160f, 0.498f, 1f);
         public bool isShowAdvancedSetting = false;
         public bool isShowRandSetting = true;
+        public bool showPreview = true;
 
         private GameObject prefab;
         private Material previewMaterial;
@@ -71,6 +72,7 @@ namespace Dg
         private SerializedProperty propScatterHeightTolerance;
         private SerializedProperty propAlignWithWorldAxis;
         private SerializedProperty propRandHeight;
+        private SerializedProperty propShowPreview;
 
         [SerializeField] private string prefabLocation = null;
         private PrefabErrorMode prefabError = PrefabErrorMode.None;
@@ -242,7 +244,7 @@ namespace Dg
             {
                 Camera.main.depthTextureMode |= DepthTextureMode.Depth;   //shader need depth texture
             }
-            LoadData();
+            LoadSetting(this);
             LoadPrefab();
             LoadAssets();
         }
@@ -261,7 +263,7 @@ namespace Dg
 
         private void OnDisable()
         {
-            SaveData();
+            SaveSetting(this);
             SceneView.duringSceneGui -= DuringSceneGUI;
             EditorApplication.hierarchyChanged -= OnHierarchyChanged;
         }
@@ -288,6 +290,7 @@ namespace Dg
             propScatterHeightTolerance = so.FindProperty(nameof(scatterHeightTolerance));
             propAlignWithWorldAxis = so.FindProperty(nameof(alignWithWorldAxis));
             propRandHeight = so.FindProperty(nameof(randHeight));
+            propShowPreview = so.FindProperty(nameof(showPreview));
         }
 
         private void OnGUI()
@@ -351,13 +354,13 @@ namespace Dg
                 {
                     GUILayout.FlexibleSpace();
                     string currentText = on ? GetText("KDeactivate") : GetText("KActivate");
-                    string currentLang = LanguageSetting.language.ToString();
+                    string currentLang = SettingManager.language.ToString();
                     GUIStyle langButton = new GUIStyle(GUI.skin.button);
                     langButton.fontStyle = FontStyle.Bold;
                     langButton.fontSize = (int)(langButton.fontSize * 0.9f);
                     if (GUILayout.Button(currentLang, langButton, GUILayout.MaxWidth(40), GUILayout.MaxHeight(20)))
                     {
-                        LanguageSetting.SwitchLanguage();
+                        SettingManager.SwitchLanguage();
                         LoadAssets();
                     }
                     GUILayout.FlexibleSpace();
@@ -510,7 +513,6 @@ namespace Dg
                 isShowAdvancedSetting = EditorGUILayout.Foldout(isShowAdvancedSetting, GetText("KAdvancedSetting"));
                 if (isShowAdvancedSetting)
                 {
-                    EditorGUILayout.PropertyField(propColor, new GUIContent(GetText("KRadiusColor"), GetText("KRadiusColorTT")));
                     EditorGUILayout.PropertyField(propKeepRootRotation, new GUIContent(GetText("KRootRotation"), GetText("KRootRotationTT")));
                     EditorGUI.BeginChangeCheck();
                     float newTolerance = EditorGUILayout.Slider(new GUIContent(GetText("KTolerance"), GetText("KToleranceTT")), propScatterHeightTolerance.floatValue, 0f, 8f);
@@ -518,6 +520,11 @@ namespace Dg
                     {
                         propScatterHeightTolerance.floatValue = newTolerance;
                     }
+
+                    GUILayout.Space(15);
+                    EditorGUILayout.PropertyField(propColor, new GUIContent(GetText("KRadiusColor"), GetText("KRadiusColorTT")));
+                    EditorGUILayout.PropertyField(propShowPreview, new GUIContent(GetText("KShowPreview"), GetText("KShowPreviewTT")));
+
                 }
             }
 
@@ -880,6 +887,7 @@ namespace Dg
 
         private void DrawObjectPreview(GameObject obj, bool isSnappedMode)
         {
+            if (!showPreview) return;
             if (isSnappedMode)
             {
                 Matrix4x4 localToWorld = Matrix4x4.TRS(hitPoint.position, hitPoint.rotation, Vector3.one);
@@ -1167,18 +1175,6 @@ namespace Dg
         {
             if (prefabLocation == null) return;
             prefab = (GameObject)AssetDatabase.LoadAssetAtPath(prefabLocation, typeof(GameObject));
-        }
-
-        private void LoadData()
-        {
-            string data = EditorPrefs.GetString(this.GetType().ToString(), JsonUtility.ToJson(this, false));
-            JsonUtility.FromJsonOverwrite(data, this);
-        }
-
-        private void SaveData()
-        {
-            string data = JsonUtility.ToJson(this, false);
-            EditorPrefs.SetString(this.GetType().ToString(), data);
         }
 
         private void ValidatePrefab()

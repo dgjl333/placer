@@ -48,3 +48,5 @@ KScatterHelper,Hold Shift and click to scatter objects\n\nHold Ctrl and click to
 KPlaceHelper,Hold Shift and click to place object\n\nHold Ctrl and click to snap the current selected objects,Shiftキーを押しながらクリックすると、オブジェクトを配置します\n\nCtrlキーを押しながらクリックすると、選択中のオブジェクトをスナップします
 KDeleteHelper,Hold Shift and click to erase objects\n\nHold Ctrl and click to snap the current selected objects,Shiftキーを押しながらクリックすると、オブジェクトを削除します\n\nCtrlキーを押しながらクリックすると、選択中のオブジェクトをスナップします
 KSnapHelper,Hold Ctrl and click to snap the current selected objects,Ctrlキーを押しながらクリックすると、選択中のオブジェクトをスナップします
+KShowPreview,Show Preview,プレビュー表示
+KShowPreviewTT,Whether to show the preview of the object before placing,オブジェクトを配置する前にプレビューを表示しますか

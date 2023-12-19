@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Dg
 {
-    internal static class LanguageSetting
+    internal static class SettingManager
     {
         public enum Language
         {
@@ -14,23 +14,25 @@ namespace Dg
             JP
         }
 
-        private static string csvPath;
         private static string settingPath;
+        private static string langCSVPath;
+        private static string langSettingPath;
         private static Dictionary<string, string> translations = new Dictionary<string, string>();
         public static Language language { get; private set; }
 
         [InitializeOnLoadMethod]
         private static void Init()
         {
-            csvPath = AssetManager.GetLangCSVPath();
-            settingPath = AssetManager.GetLangSettingPath();
-            LoadSetting();
-            LoadTexts();
+            settingPath = AssetManager.GetSettingPath();
+            langCSVPath = AssetManager.GetLangCSVPath();
+            langSettingPath = AssetManager.GetLangSettingPath();
+            LoadLangSetting();
+            LoadLangTexts();
         }
 
-        private static void LoadTexts()
+        private static void LoadLangTexts()
         {
-            using (StreamReader reader = new StreamReader(csvPath))
+            using (StreamReader reader = new StreamReader(langCSVPath))
             {
                 string[] firstLine = reader.ReadLine().Split(',');
                 int langIndex = Array.IndexOf(firstLine, language.ToString());
@@ -38,7 +40,7 @@ namespace Dg
                 {
                     string[] text = reader.ReadLine().Split(',');
                     string key = text[0];
-                    translations[key] = text[langIndex].Replace("\\n","\n");
+                    translations[key] = text[langIndex].Replace("\\n", "\n");
                 }
             }
         }
@@ -47,7 +49,7 @@ namespace Dg
         {
             if (translations.Count == 0)
             {
-                LoadTexts();
+                LoadLangTexts();
             }
             return translations[key];
         }
@@ -65,22 +67,34 @@ namespace Dg
                 default:
                     break;
             }
-            LoadTexts();
-            SaveSetting();
+            LoadLangTexts();
+            SaveLangSetting();
         }
 
-        private static void SaveSetting()
+        public static void LoadSetting(System.Object o)
         {
-            using (StreamWriter writer = new StreamWriter(settingPath, false))
+            string data = File.ReadAllText(settingPath);
+            JsonUtility.FromJsonOverwrite(data, o);
+        }
+
+        public static void SaveSetting(System.Object o)
+        {
+            string data = JsonUtility.ToJson(o, false);
+            File.WriteAllText(settingPath, data);
+        }
+
+        private static void SaveLangSetting()
+        {
+            using (StreamWriter writer = new StreamWriter(langSettingPath, false))
             {
                 writer.WriteLine(language.ToString());
             }
         }
 
-        private static void LoadSetting()
+        private static void LoadLangSetting()
         {
             string lang;
-            using (StreamReader reader = new StreamReader(settingPath))
+            using (StreamReader reader = new StreamReader(langSettingPath))
             {
                 lang = reader.ReadLine();
             }

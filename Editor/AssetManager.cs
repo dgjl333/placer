@@ -37,8 +37,9 @@ namespace Dg
 
         public static Material GetPreviewMaterial()
         {
-            return GetMaterial("27300dd011ad28e409587d480fd8e501");
+            return GetMaterial("9082455ad724e3241958c754778516c7");
         }
+
         public static Material GetDeletionMaterial()
         {
             return GetMaterial("1b572307fd5a9c740b2854df42cecb0c");
@@ -52,6 +53,11 @@ namespace Dg
         public static string GetLangSettingPath()
         {
             return AssetDatabase.GUIDToAssetPath("a14632402852e6c46b31eb8ae2607b0b");
+        }
+
+        public static string GetSettingPath()
+        {
+            return AssetDatabase.GUIDToAssetPath("8fc226f1a60493a409d64b567aa5c8fe");
         }
 
         private static Texture GetTexture(string guid)
