@@ -21,6 +21,7 @@ namespace Dg
         {
             GetWindow<Placer>();
         }
+
         public int surfaceLayer = int.MaxValue;
         public bool on = true;
         public Mode mode = Mode.Scatter;
@@ -83,12 +84,10 @@ namespace Dg
         private bool ctrl = false;
         private bool alt = false;
         private bool isInPrefabMode = false;
+        private bool hasObjectSpawn = false;
+        private float objectSpawnTime;
         private int controlID;
 
-        private readonly float minRadius = 0f;
-        private readonly float maxRadius = 50f;
-        private readonly float minOffset = -5f;
-        private readonly float maxOffset = 5f;
         private readonly float GizmoWidth = 2f;
         private readonly int discSegment = 64;
 
@@ -393,22 +392,16 @@ namespace Dg
             void DrawSpawnRadius()
             {
                 EditorGUI.BeginChangeCheck();
-                float newRadius = EditorGUILayout.Slider(new GUIContent(GetText("KRadius"), GetText("KRadiusTT")), propRadius.floatValue, minRadius, maxRadius);
+                EditorGUILayout.PropertyField(propRadius, new GUIContent(GetText("KRadius"), GetText("KRadiusTT")));
                 if (EditorGUI.EndChangeCheck())
                 {
-                    propRadius.floatValue = newRadius;
-                    RandPoints.ValidateRandPoints(spawnCount, newRadius, spacing);
+                    RandPoints.ValidateRandPoints(spawnCount, propRadius.floatValue, spacing);
                 }
             }
 
             void DrawDeleteRadius()
             {
-                EditorGUI.BeginChangeCheck();
-                float newRadius = EditorGUILayout.Slider(new GUIContent(GetText("KRadius"), GetText("KRadiusTT")), propDeletionRadius.floatValue, minRadius, maxRadius);
-                if (EditorGUI.EndChangeCheck())
-                {
-                    propDeletionRadius.floatValue = newRadius;
-                }
+                EditorGUILayout.PropertyField(propDeletionRadius, new GUIContent(GetText("KRadius"), GetText("KRadiusTT")));
             }
 
             void DrawSpawnCount()
@@ -515,7 +508,7 @@ namespace Dg
                 {
                     EditorGUILayout.PropertyField(propKeepRootRotation, new GUIContent(GetText("KRootRotation"), GetText("KRootRotationTT")));
                     EditorGUI.BeginChangeCheck();
-                    float newTolerance = EditorGUILayout.Slider(new GUIContent(GetText("KTolerance"), GetText("KToleranceTT")), propScatterHeightTolerance.floatValue, 0f, 8f);
+                    float newTolerance = EditorGUILayout.Slider(new GUIContent(GetText("KTolerance"), GetText("KToleranceTT")), propScatterHeightTolerance.floatValue, 0f, 10f);
                     if (EditorGUI.EndChangeCheck())
                     {
                         propScatterHeightTolerance.floatValue = newTolerance;
@@ -524,7 +517,6 @@ namespace Dg
                     GUILayout.Space(15);
                     EditorGUILayout.PropertyField(propColor, new GUIContent(GetText("KRadiusColor"), GetText("KRadiusColorTT")));
                     EditorGUILayout.PropertyField(propShowPreview, new GUIContent(GetText("KShowPreview"), GetText("KShowPreviewTT")));
-
                 }
             }
 
@@ -585,6 +577,7 @@ namespace Dg
                     break;
             }
             Handles.zTest = CompareFunction.Always;
+            UpdateObjectSpawnTime();
         }
 
         private void RaycastToMousePosition(List<PointWithOrientation> pointList, Camera cam, bool isSnappedMode)
@@ -592,7 +585,7 @@ namespace Dg
             Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
             if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, surfaceLayer)) return;
             RaycastHit finalHit = hit;
-            if (!isSnappedMode) //non snap mode
+            if (!isSnappedMode)
             {
                 switch (mode)
                 {
@@ -610,10 +603,10 @@ namespace Dg
                         break;
                 }
             }
-            else //exclude self
+            else
             {
                 GameObject[] objs = Selection.gameObjects;
-                bool isFromObject = objs.Any(o => IsFromObject(hit.collider.gameObject, o));
+                bool isFromObject = objs.Any(o => IsFromObject(hit.collider.gameObject, o));  //exclude the selected object itself
                 if (isFromObject)
                 {
                     RaycastHit[] hits = Physics.RaycastAll(ray, Mathf.Infinity, surfaceLayer);
@@ -799,7 +792,7 @@ namespace Dg
         private void AdjustOffset()
         {
             float scrollDir = GetScrollDirection();
-            float newValue = Mathf.Clamp(propHeightOffset.floatValue - scrollDir * 0.1f, minOffset, maxOffset);
+            float newValue = propHeightOffset.floatValue - scrollDir * 0.1f;
             so.Update();
             propHeightOffset.floatValue = newValue;
             so.ApplyModifiedPropertiesWithoutUndo();
@@ -813,12 +806,12 @@ namespace Dg
             switch (mode)
             {
                 case Mode.Scatter:
-                    newValue = Mathf.Clamp(propRadius.floatValue * (1 - scrollDir * 0.04f), minRadius, maxRadius);
+                    newValue = propRadius.floatValue * (1 - scrollDir * 0.04f);
                     propRadius.floatValue = newValue;
                     RandPoints.ValidateRandPoints(spawnCount, spawnRadius, spacing);
                     break;
                 case Mode.Delete:
-                    newValue = Mathf.Clamp(propDeletionRadius.floatValue * (1 - scrollDir * 0.04f), minRadius, maxRadius);
+                    newValue = propDeletionRadius.floatValue * (1 - scrollDir * 0.04f);
                     propDeletionRadius.floatValue = newValue;
                     break;
                 default:
@@ -887,7 +880,8 @@ namespace Dg
 
         private void DrawObjectPreview(GameObject obj, bool isSnappedMode)
         {
-            if (!showPreview) return;
+            if (!showPreview || previewMaterial == null) return;
+            previewMaterial.SetPass(0);
             if (isSnappedMode)
             {
                 Matrix4x4 localToWorld = Matrix4x4.TRS(hitPoint.position, hitPoint.rotation, Vector3.one);
@@ -895,10 +889,13 @@ namespace Dg
             }
             else
             {
-                for (int i = 0; i < poseList.Count; i++)
+                if (!hasObjectSpawn)
                 {
-                    Matrix4x4 localToWorld = Matrix4x4.TRS(poseList[i].position, poseList[i].rotation, Vector3.one);
-                    DrawMesh(obj, localToWorld, !keepRootRotation, randScale, randHeight, i);
+                    for (int i = 0; i < poseList.Count; i++)
+                    {
+                        Matrix4x4 localToWorld = Matrix4x4.TRS(poseList[i].position, poseList[i].rotation, Vector3.one);
+                        DrawMesh(obj, localToWorld, !keepRootRotation, randScale, randHeight, i);
+                    }
                 }
             }
         }
@@ -922,7 +919,7 @@ namespace Dg
             {
                 foreach (GameObject obj in prefabInfo.cachedAllInstancedInScene)
                 {
-                    if (obj == null) continue;   // prevent error when deleting 
+                    if (obj == null) continue;
                     float distance = Vector3.Distance(obj.transform.position, hitPoint.position);
                     if (distance < deletionRadius)
                     {
@@ -968,27 +965,30 @@ namespace Dg
 
         private void DrawMesh(GameObject o, Matrix4x4 localToWorld, bool ignoreParentRotation, bool randScale, bool randHeight, int randValueIndex = -1)
         {
-            if (previewMaterial == null) return;
-            previewMaterial.SetPass(0);
             IEnumerable<Tuple<Mesh, Matrix4x4>> allMeshes = GetAllMeshes(o);
             float height;
             height = randHeight ? GetRandValue(randValueIndex, randHeightMin, randHeightMax) + heightOffset : heightOffset;
-            Matrix4x4 yAxisOffsetMatrix = Matrix4x4.TRS(new Vector3(0f, height, 0f), Quaternion.identity, Vector3.one);
-            Matrix4x4 ignoreParentPositionMatrix = Matrix4x4.TRS(-o.transform.position, Quaternion.identity, Vector3.one);
+            Matrix4x4 yAxisOffsetMatrix = Matrix4x4.Translate(new Vector3(0f, height, 0f));
+            Matrix4x4 ignoreParentPositionMatrix = Matrix4x4.Translate(-o.transform.position);
             Matrix4x4 ignoreParentMatrix = ignoreParentPositionMatrix;
             if (ignoreParentRotation)
             {
-                Matrix4x4 ignoreParentRotationMatrix = Matrix4x4.TRS(Vector3.zero, Quaternion.Inverse(o.transform.rotation), Vector3.one);
+                Matrix4x4 ignoreParentRotationMatrix = Matrix4x4.Rotate(Quaternion.Inverse(o.transform.rotation));
                 ignoreParentMatrix = ignoreParentRotationMatrix * ignoreParentMatrix;
             }
             foreach (Tuple<Mesh, Matrix4x4> mesh in allMeshes)
             {
+                Matrix4x4 outputMatrix;
                 Matrix4x4 childMatrix = mesh.Item2;
-                Matrix4x4 outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
                 if (randScale)
                 {
                     float scale = GetRandValue(randValueIndex, randScaleMin, randScaleMax);
-                    outputMatrix = outputMatrix * Matrix4x4.TRS(Vector3.zero, Quaternion.identity, Vector3.one * scale);
+                    Matrix4x4 scaleMatrix = Matrix4x4.Scale(Vector3.one * scale);
+                    outputMatrix = localToWorld * yAxisOffsetMatrix * scaleMatrix * ignoreParentMatrix * childMatrix;
+                }
+                else
+                {
+                    outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
                 }
                 Graphics.DrawMeshNow(mesh.Item1, outputMatrix);
             }
@@ -1032,6 +1032,22 @@ namespace Dg
             }
             RandPoints.GenerateRandPoints(spawnCount, spawnRadius, spacing);
             GenerateRandValues(spawnCount);
+            DelayDrawPreview();
+        }
+
+        private void DelayDrawPreview()
+        {
+            hasObjectSpawn = true;
+            objectSpawnTime = Time.realtimeSinceStartup;
+        }
+
+        private void UpdateObjectSpawnTime()
+        {
+            if (!hasObjectSpawn) return;
+            if (Time.realtimeSinceStartup - objectSpawnTime > 0.1f)
+            {
+                hasObjectSpawn = false;
+            }
         }
 
         private void DrawRange(RaycastHit hit, Color color, float radius)
@@ -1067,7 +1083,7 @@ namespace Dg
                     surfaceHits[i] = null;
                 }
             }
-            for (int i = 0; i < segment; i++)  //connect last element to first
+            for (int i = 0; i < segment; i++)  //append the first point to array
             {
                 if (surfaceHits[i] != null)
                 {
@@ -1180,7 +1196,7 @@ namespace Dg
         private void ValidatePrefab()
         {
             if (prefab == null) return;
-            GameObject obj = PrefabUtility.GetCorrespondingObjectFromOriginalSource(prefab);   //get source object from the field
+            GameObject obj = PrefabUtility.GetCorrespondingObjectFromOriginalSource(prefab);   
             bool isAlreadyPrefab = (obj == prefab);
             bool isOuterPrefab = PrefabUtility.IsOutermostPrefabInstanceRoot(prefab);
             if (obj != null)
