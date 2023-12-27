@@ -6,7 +6,7 @@ KPlace,Place,配置
 KDelete,Delete,削除
 KSnap,Snap,スナップ
 KRadius,Radius,半径
-KRadiusTT,[Shift + Mouse Scroll] Specify the radius of area,[Shift + マウスホイール] 範囲の半径を指定します
+KRadiusTT,[Shift + Mouse Scroll] Specify the radius of the range,[Shift + マウスホイール] 範囲の半径を指定します
 KSpawnCount,Spawn Count,生成数
 KSpawnCountTT,Specify the number of objects to spawn,生成するオブジェクトの数を指定します
 KMinSpacing,Min Spacing,最小間隔
