@@ -7,12 +7,12 @@ using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
-using static Dg.Placer.RandData;
-using static Dg.SettingManager;
+using static DG3.Placer.RandData;
+using static DG3.SettingManager;
 using Random = UnityEngine.Random;
 
 
-namespace Dg
+namespace DG3
 {
     internal class Placer : EditorWindow
     {

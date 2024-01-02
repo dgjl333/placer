@@ -4,7 +4,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 
-namespace Dg
+namespace DG3
 {
     internal static class SettingManager
     {
