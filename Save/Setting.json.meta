@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 8fc226f1a60493a409d64b567aa5c8fe
+TextScriptImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 275126
+  packageName: Placer
+  packageVersion: 1.0.0
+  assetPath: Assets/DG3/Save/Setting.json
+  uploadId: 639474

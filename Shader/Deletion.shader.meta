@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: c2c3739423ffa8c45abb6a30d3d6bb39
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  preprocessorOverride: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 275126
+  packageName: Placer
+  packageVersion: 1.0.0
+  assetPath: Assets/DG3/Shader/Deletion.shader
+  uploadId: 639474

@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 9496dd598027c3047b8233228b4007cb
+TextScriptImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 275126
+  packageName: Placer
+  packageVersion: 1.0.0
+  assetPath: Assets/DG3/Language/Language.csv
+  uploadId: 639474

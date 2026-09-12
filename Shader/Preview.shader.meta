@@ -1,0 +1,17 @@
+fileFormatVersion: 2
+guid: c9166610662796e4287b04a7b0e44884
+ShaderImporter:
+  externalObjects: {}
+  defaultTextures: []
+  nonModifiableTextures: []
+  preprocessorOverride: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 275126
+  packageName: Placer
+  packageVersion: 1.0.0
+  assetPath: Assets/DG3/Shader/Preview.shader
+  uploadId: 639474

@@ -1,0 +1,18 @@
+fileFormatVersion: 2
+guid: e59dc2d1faa78134dbaf1bbf8fe08f2e
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences: []
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 275126
+  packageName: Placer
+  packageVersion: 1.0.0
+  assetPath: Assets/DG3/Editor/AssetManager.cs
+  uploadId: 639474

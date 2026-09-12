@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: a14632402852e6c46b31eb8ae2607b0b
+TextScriptImporter:
+  externalObjects: {}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 275126
+  packageName: Placer
+  packageVersion: 1.0.0
+  assetPath: Assets/DG3/Save/LanguageSetting.txt
+  uploadId: 639474
