@@ -441,10 +441,11 @@ namespace DG3
             void DrawPrefab()
             {
                 EditorGUI.BeginChangeCheck();
-                prefab = (GameObject)EditorGUILayout.ObjectField(new GUIContent(GetText("KPrefab"), GetText("KPrefabTT")), prefab, typeof(GameObject), true);
+                GameObject objectField = null;
+                objectField = (GameObject)EditorGUILayout.ObjectField(new GUIContent(GetText("KPrefab"), GetText("KPrefabTT")), prefab, typeof(GameObject), true);
                 if (EditorGUI.EndChangeCheck())
                 {
-                    ValidatePrefab();
+                    ValidatePrefab(objectField);
                     UpdatePrefabInfo();
                 }
                 if (prefabError != PrefabErrorMode.None)
@@ -1193,29 +1194,38 @@ namespace DG3
             prefab = (GameObject)AssetDatabase.LoadAssetAtPath(prefabLocation, typeof(GameObject));
         }
 
-        private void ValidatePrefab()
+        private void ValidatePrefab(GameObject objectField)
         {
-            if (prefab == null) return;
-            GameObject obj = PrefabUtility.GetCorrespondingObjectFromOriginalSource(prefab);   
-            bool isAlreadyPrefab = (obj == prefab);
-            bool isOuterPrefab = PrefabUtility.IsOutermostPrefabInstanceRoot(prefab);
-            if (obj != null)
+            if (objectField == null)
+                return;
+            //dragged from project window, not from scene
+            if (PrefabUtility.IsPartOfPrefabAsset(objectField))
             {
-                if (isOuterPrefab || isAlreadyPrefab)
+                prefab = objectField;
+                prefabError = PrefabErrorMode.None;
+            }
+            //dragged from heriachy
+            else
+            {
+                GameObject prefabSource = PrefabUtility.GetCorrespondingObjectFromSource(objectField);
+                if (prefabSource != null)
                 {
-                    prefab = obj;
-                    prefabError = PrefabErrorMode.None;
+                    if (PrefabUtility.IsOutermostPrefabInstanceRoot(objectField))
+                    {
+                        prefab = prefabSource;
+                        prefabError = PrefabErrorMode.None;
+                    }
+                    else
+                    {
+                        prefab = null;
+                        prefabError = PrefabErrorMode.NotOuterMostPrefab;
+                    }
                 }
                 else
                 {
                     prefab = null;
-                    prefabError = PrefabErrorMode.NotOuterMostPrefab;
+                    prefabError = PrefabErrorMode.NotAnPrefab;
                 }
-            }
-            else
-            {
-                prefab = null;
-                prefabError = PrefabErrorMode.NotAnPrefab;
             }
         }
 
@@ -1296,7 +1306,7 @@ namespace DG3
                 if ((maskWithoutEmpty & (1 << i)) != 0)
                 {
                     mask |= 1 << layerNumbers[i];
-                }    
+                }
             }
             return mask;
         }
