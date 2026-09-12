@@ -881,8 +881,9 @@ namespace DG3
 
         private void DrawObjectPreview(GameObject obj, bool isSnappedMode)
         {
-            if (!showPreview || previewMaterial == null) return;
-            previewMaterial.SetPass(0);
+            if (!showPreview || previewMaterial == null)
+                return;
+            
             if (isSnappedMode)
             {
                 Matrix4x4 localToWorld = Matrix4x4.TRS(hitPoint.position, hitPoint.rotation, Vector3.one);
@@ -934,20 +935,7 @@ namespace DG3
         private IEnumerable<GameObject> FindAllInstancesOfPrefab(GameObject prefab)
         {
             Scene activeScene = SceneManager.GetActiveScene();
-#if UNITY_2021_2_OR_NEWER
             return PrefabUtility.FindAllInstancesOfPrefab(prefab, activeScene);
-#else
-            List<GameObject> foundInstances = new List<GameObject>();
-            GameObject[] allObjects = activeScene.GetRootGameObjects();
-            foreach (GameObject obj in allObjects)
-            {
-                if (PrefabUtility.GetCorrespondingObjectFromOriginalSource(obj) == prefab)
-                {
-                    foundInstances.Add(obj);
-                }
-            }
-            return foundInstances;
-#endif
         }
 
         private void DrawDeletionPreviews(IEnumerable<GameObject> objs)
@@ -991,7 +979,10 @@ namespace DG3
                 {
                     outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
                 }
-                Graphics.DrawMeshNow(mesh.Item1, outputMatrix);
+
+                //Newer Unity versions DrawMeshNow does not provide depth texture for shader
+                Graphics.DrawMesh(mesh.Item1, outputMatrix, previewMaterial, 0, SceneView.lastActiveSceneView.camera);
+                SceneView.RepaintAll();
             }
         }
 

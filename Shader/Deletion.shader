@@ -1,14 +1,70 @@
-﻿Shader "Custom/Deletion"
+﻿
+Shader "Custom/Deletion"
 {
     Properties
     {
         _Color("Color",Color)=(0.65882,0.23921,0.23921,0.58823)
     }
+
     SubShader
     {
         Tags {
             "RenderType" = "Transparent"
-            "Queue" = "Transparent+4000" 
+            "Queue" = "Overlay"
+            "RenderPipeline" = "UniversalPipeline"
+        }
+
+        Blend SrcAlpha OneMinusSrcAlpha
+        ZTest Always
+        ZWrite Off
+
+        Pass
+        {
+            HLSLPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+
+            struct Attributes
+            {
+                float4 vertex : POSITION;
+                float3 normal : NORMAL;
+            };
+
+            struct Varyings
+            {
+                float4 vertex : SV_POSITION;
+                float3 normal : TEXCOORD0;
+                float3 viewDir : TEXCOORD1;
+            };
+
+            float4 _Color;
+
+            Varyings vert(Attributes v)
+            {
+                Varyings o;
+                VertexPositionInputs posInputs = GetVertexPositionInputs(v.vertex.xyz);
+                o.vertex = posInputs.positionCS;
+                o.normal = TransformObjectToWorldNormal(v.normal);
+                o.viewDir = normalize(GetWorldSpaceViewDir(posInputs.positionWS));
+                return o;
+            }
+
+            half4 frag(Varyings i) : SV_Target
+            {
+                float rimLight = 1 - pow(dot(i.viewDir, normalize(i.normal)), 2);
+                return float4(_Color.xyz * rimLight, _Color.w);
+            }
+            ENDHLSL
+        }
+    }
+
+    SubShader
+    {
+        Tags {
+            "RenderType" = "Transparent"
+            "Queue" = "Overlay"
         }
 
         Blend SrcAlpha OneMinusSrcAlpha
@@ -33,24 +89,24 @@
             {
                 float4 vertex : SV_POSITION;
                 float3 normal : TEXCOORD0;
-                float3 viewDir: TEXCOORD1;
+                float3 viewDir : TEXCOORD1;
             };
 
             float4 _Color;
 
-            v2f vert (appdata v)
+            v2f vert(appdata v)
             {
                 v2f o;
                 o.vertex = UnityObjectToClipPos(v.vertex);
                 o.normal = UnityObjectToWorldNormal(v.normal);
-                o.viewDir= normalize(WorldSpaceViewDir(v.vertex));
+                o.viewDir = normalize(WorldSpaceViewDir(v.vertex));
                 return o;
             }
 
-            fixed4 frag (v2f i) : SV_Target
+            fixed4 frag(v2f i) : SV_Target
             {
-                float rimLight=1-pow(dot(i.viewDir,normalize(i.normal)),2);
-                return float4(_Color.xyz*rimLight,_Color.w);
+                float rimLight = 1 - pow(dot(i.viewDir, normalize(i.normal)), 2);
+                return float4(_Color.xyz * rimLight, _Color.w);
             }
             ENDCG
         }
