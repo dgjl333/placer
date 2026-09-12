@@ -8,6 +8,11 @@ Shader "Custom/Deletion"
 
     SubShader
     {
+        PackageRequirements
+        {
+            "com.unity.render-pipelines.universal": "10.0"
+        }
+
         Tags {
             "RenderType" = "Transparent"
             "Queue" = "Overlay"
