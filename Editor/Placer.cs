@@ -91,6 +91,8 @@ namespace DG3
         private readonly float GizmoWidth = 2f;
         private readonly int discSegment = 64;
 
+        private bool isBuiltInRenderPipeline;
+
         private struct MeshWithMatrix
         {
             public Mesh mesh;
@@ -255,6 +257,7 @@ namespace DG3
 
         private void Awake()
         {
+            isBuiltInRenderPipeline = (GraphicsSettings.currentRenderPipeline == null);
             if (Camera.main != null)
             {
                 Camera.main.depthTextureMode |= DepthTextureMode.Depth;   //shader need depth texture
@@ -269,20 +272,28 @@ namespace DG3
             LoadAssets();
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
             SceneView.duringSceneGui += DuringSceneGUI;
-            RenderPipelineManager.beginContextRendering += BeforeSceneRender;
             GetProperties();
             RandPoints.GenerateRandPoints(spawnCount, spawnRadius, spacing);
             GenerateRandValues(spawnCount);
             controlID = GUIUtility.GetControlID(FocusType.Passive);
             UpdatePrefabInfo();
+
+            if (!isBuiltInRenderPipeline)
+            {
+                RenderPipelineManager.beginContextRendering += BeforeSceneRender;
+            }
         }
 
         private void OnDisable()
         {
             SaveSetting(this);
             SceneView.duringSceneGui -= DuringSceneGUI;
-            RenderPipelineManager.beginContextRendering -= BeforeSceneRender;
             EditorApplication.hierarchyChanged -= OnHierarchyChanged;
+
+            if (!isBuiltInRenderPipeline)
+            {
+                RenderPipelineManager.beginContextRendering -= BeforeSceneRender;
+            }
         }
 
         private void GetProperties()
@@ -558,9 +569,13 @@ namespace DG3
 
         private void DuringSceneGUI(SceneView sceneView)
         {
-            previewBuffer.Clear();
+            if (!isBuiltInRenderPipeline)
+            {
+                previewBuffer.Clear();
+            }
+
             isInPrefabMode = (PrefabStageUtility.GetCurrentPrefabStage() != null);
-            if (!on || isInPrefabMode) 
+            if (!on || isInPrefabMode)
                 return;
 
             Handles.zTest = CompareFunction.LessEqual;
@@ -607,7 +622,7 @@ namespace DG3
         private void RaycastToMousePosition(List<PointWithOrientation> pointList, Camera cam, bool isSnappedMode)
         {
             Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
-            if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, surfaceLayer)) 
+            if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, surfaceLayer))
                 return;
 
             RaycastHit finalHit = hit;
@@ -907,7 +922,7 @@ namespace DG3
         {
             if (!showPreview || previewMaterial == null)
                 return;
-            
+
             if (isSnappedMode)
             {
                 Matrix4x4 localToWorld = Matrix4x4.TRS(hitPoint.position, hitPoint.rotation, Vector3.one);
@@ -1004,7 +1019,16 @@ namespace DG3
                     outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
                 }
 
-                previewBuffer.Add(new MeshWithMatrix { mesh = meshData.mesh, matrix = outputMatrix });
+                if (!isBuiltInRenderPipeline)
+                {
+                    previewBuffer.Add(new MeshWithMatrix { mesh = meshData.mesh, matrix = outputMatrix });
+                }
+                //urp DrawMeshNow cant provide shader depth texture
+                else
+                {
+                    previewMaterial.SetPass(0);
+                    Graphics.DrawMeshNow(meshData.mesh, outputMatrix);
+                }
             }
         }
 
