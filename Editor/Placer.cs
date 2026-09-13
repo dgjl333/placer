@@ -91,6 +91,11 @@ namespace DG3
         private readonly float GizmoWidth = 2f;
         private readonly int discSegment = 64;
 
+        private struct MeshWithMatrix
+        {
+            public Mesh mesh;
+            public Matrix4x4 matrix;
+        }
         public static class RandData
         {
             public static class RandPoints
@@ -237,6 +242,17 @@ namespace DG3
             "KScatterHelper", "KPlaceHelper", "KDeleteHelper", "KSnapHelper"
         };
 
+        // store the meshes before scene render to avoid flickering
+        private List<MeshWithMatrix> previewBuffer = new();
+
+        private void BeforeSceneRender(ScriptableRenderContext context, List<Camera> cameras)
+        {
+            foreach (MeshWithMatrix meshData in previewBuffer)
+            {
+                Graphics.DrawMesh(meshData.mesh, meshData.matrix, previewMaterial, 0, SceneView.lastActiveSceneView.camera);
+            }
+        }
+
         private void Awake()
         {
             if (Camera.main != null)
@@ -253,6 +269,7 @@ namespace DG3
             LoadAssets();
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
             SceneView.duringSceneGui += DuringSceneGUI;
+            RenderPipelineManager.beginContextRendering += BeforeSceneRender;
             GetProperties();
             RandPoints.GenerateRandPoints(spawnCount, spawnRadius, spacing);
             GenerateRandValues(spawnCount);
@@ -264,6 +281,7 @@ namespace DG3
         {
             SaveSetting(this);
             SceneView.duringSceneGui -= DuringSceneGUI;
+            RenderPipelineManager.beginContextRendering -= BeforeSceneRender;
             EditorApplication.hierarchyChanged -= OnHierarchyChanged;
         }
 
@@ -540,8 +558,11 @@ namespace DG3
 
         private void DuringSceneGUI(SceneView sceneView)
         {
+            previewBuffer.Clear();
             isInPrefabMode = (PrefabStageUtility.GetCurrentPrefabStage() != null);
-            if (!on || isInPrefabMode) return;
+            if (!on || isInPrefabMode) 
+                return;
+
             Handles.zTest = CompareFunction.LessEqual;
             List<PointWithOrientation> pointList = new List<PointWithOrientation>();
             bool isSnappedMode = ctrl;
@@ -563,7 +584,9 @@ namespace DG3
             switch (mode)
             {
                 case Mode.Delete:
-                    if (isSnappedMode || prefabInfo.originalPrefab == null) return;
+                    if (isSnappedMode || prefabInfo.originalPrefab == null)
+                        return;
+
                     DeleteModeInputCheck();
                     IEnumerable<GameObject> objsInDeletionRange = GetObjectsInDeletionRange();
                     DrawDeletionPreviews(objsInDeletionRange);
@@ -584,7 +607,9 @@ namespace DG3
         private void RaycastToMousePosition(List<PointWithOrientation> pointList, Camera cam, bool isSnappedMode)
         {
             Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
-            if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, surfaceLayer)) return;
+            if (!Physics.Raycast(ray, out RaycastHit hit, Mathf.Infinity, surfaceLayer)) 
+                return;
+
             RaycastHit finalHit = hit;
             if (!isSnappedMode)
             {
@@ -693,7 +718,6 @@ namespace DG3
         {
             return 0.1f + (spawnRadius * scatterHeightTolerance) / 9f;
         }
-
         private float GetRaycastMaxDistance()
         {
             return GetRaycastOffset() * 2f + GetObjectBoundingBoxSize(prefab) / 2f;
@@ -944,17 +968,17 @@ namespace DG3
             deletionMaterial.SetPass(0);
             foreach (GameObject o in objs)
             {
-                IEnumerable<Tuple<Mesh, Matrix4x4>> allMeshes = GetAllMeshes(o);
-                foreach (Tuple<Mesh, Matrix4x4> mesh in allMeshes)
+                IEnumerable<MeshWithMatrix> allMeshesData = GetAllMeshes(o);
+                foreach (MeshWithMatrix meshData in allMeshesData)
                 {
-                    Graphics.DrawMeshNow(mesh.Item1, mesh.Item2);
+                    Graphics.DrawMeshNow(meshData.mesh, meshData.matrix);
                 }
             }
         }
 
         private void DrawMesh(GameObject o, Matrix4x4 localToWorld, bool ignoreParentRotation, bool randScale, bool randHeight, int randValueIndex = -1)
         {
-            IEnumerable<Tuple<Mesh, Matrix4x4>> allMeshes = GetAllMeshes(o);
+            IEnumerable<MeshWithMatrix> allMeshesData = GetAllMeshes(o);
             float height;
             height = randHeight ? GetRandValue(randValueIndex, randHeightMin, randHeightMax) + heightOffset : heightOffset;
             Matrix4x4 yAxisOffsetMatrix = Matrix4x4.Translate(new Vector3(0f, height, 0f));
@@ -965,10 +989,10 @@ namespace DG3
                 Matrix4x4 ignoreParentRotationMatrix = Matrix4x4.Rotate(Quaternion.Inverse(o.transform.rotation));
                 ignoreParentMatrix = ignoreParentRotationMatrix * ignoreParentMatrix;
             }
-            foreach (Tuple<Mesh, Matrix4x4> mesh in allMeshes)
+            foreach (MeshWithMatrix meshData in allMeshesData)
             {
                 Matrix4x4 outputMatrix;
-                Matrix4x4 childMatrix = mesh.Item2;
+                Matrix4x4 childMatrix = meshData.matrix;
                 if (randScale)
                 {
                     float scale = GetRandValue(randValueIndex, randScaleMin, randScaleMax);
@@ -980,19 +1004,17 @@ namespace DG3
                     outputMatrix = localToWorld * yAxisOffsetMatrix * ignoreParentMatrix * childMatrix;
                 }
 
-                //Newer Unity versions DrawMeshNow does not provide depth texture for shader
-                Graphics.DrawMesh(mesh.Item1, outputMatrix, previewMaterial, 0, SceneView.lastActiveSceneView.camera);
-                SceneView.RepaintAll();
+                previewBuffer.Add(new MeshWithMatrix { mesh = meshData.mesh, matrix = outputMatrix });
             }
         }
 
-        private IEnumerable<Tuple<Mesh, Matrix4x4>> GetAllMeshes(GameObject o)
+        private IEnumerable<MeshWithMatrix> GetAllMeshes(GameObject o)
         {
             MeshFilter[] meshFilters = o.GetComponentsInChildren<MeshFilter>();
             SkinnedMeshRenderer[] skinRenderers = o.GetComponentsInChildren<SkinnedMeshRenderer>();
             return meshFilters
-                  .Select(meshFilter => Tuple.Create(meshFilter.sharedMesh, meshFilter.transform.localToWorldMatrix))
-                  .Concat(skinRenderers.Select(skinnedMeshRenderer => Tuple.Create(skinnedMeshRenderer.sharedMesh, skinnedMeshRenderer.transform.localToWorldMatrix)));
+                  .Select(meshFilter => new MeshWithMatrix { mesh = meshFilter.sharedMesh, matrix = meshFilter.transform.localToWorldMatrix })
+                  .Concat(skinRenderers.Select(skinnedMeshRenderer => new MeshWithMatrix { mesh = skinnedMeshRenderer.sharedMesh, matrix = skinnedMeshRenderer.transform.localToWorldMatrix }));
         }
 
         private void SnapObjects()
