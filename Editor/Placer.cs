@@ -91,7 +91,8 @@ namespace DG3
         private readonly float GizmoWidth = 2f;
         private readonly int discSegment = 64;
 
-        private bool isBuiltInRenderPipeline;
+        private bool isGUIInitialized = false;
+        private bool isBuiltInRenderPipeline = false;
 
         private struct MeshWithMatrix
         {
@@ -275,7 +276,6 @@ namespace DG3
             GetProperties();
             RandPoints.GenerateRandPoints(spawnCount, spawnRadius, spacing);
             GenerateRandValues(spawnCount);
-            controlID = GUIUtility.GetControlID(FocusType.Passive);
             UpdatePrefabInfo();
 
             if (!isBuiltInRenderPipeline)
@@ -321,8 +321,19 @@ namespace DG3
             propShowPreview = so.FindProperty(nameof(showPreview));
         }
 
+        private void GUIInit()
+        {
+            controlID = GUIUtility.GetControlID(FocusType.Passive);
+            isGUIInitialized = true;
+        }
+
         private void OnGUI()
         {
+            if (!isGUIInitialized)
+            {
+                GUIInit();
+            }
+
             so.Update();
             DrawHeader();
             if (on)
@@ -688,7 +699,9 @@ namespace DG3
             HitInfo hitInfo = new HitInfo(hit.normal, cam, alignWithWorldAxis);
             hitPoint.position = hit.point;
             hitPoint.rotation = Quaternion.AngleAxis(rotationOffset, hitInfo.Normal) * Quaternion.LookRotation(hitInfo.Tangent, hitInfo.Normal);
-            if (ctrl || prefabInfo.originalPrefab == null) return;
+            if (ctrl || prefabInfo.originalPrefab == null)
+                return;
+
             switch (mode)
             {
                 case Mode.Delete:
@@ -869,7 +882,9 @@ namespace DG3
 
         private float GetObjectBoundingBoxSize(GameObject obj)
         {
-            if (obj == null) return -1f;
+            if (obj == null)
+                return -1f;
+
             Renderer renderer = obj.GetComponent<Renderer>();
             if (renderer != null)
             {
@@ -960,7 +975,9 @@ namespace DG3
             {
                 foreach (GameObject obj in prefabInfo.cachedAllInstancedInScene)
                 {
-                    if (obj == null) continue;
+                    if (obj == null)
+                        continue;
+
                     float distance = Vector3.Distance(obj.transform.position, hitPoint.position);
                     if (distance < deletionRadius)
                     {
@@ -979,7 +996,9 @@ namespace DG3
 
         private void DrawDeletionPreviews(IEnumerable<GameObject> objs)
         {
-            if (deletionMaterial == null) return;
+            if (deletionMaterial == null)
+                return;
+
             deletionMaterial.SetPass(0);
             foreach (GameObject o in objs)
             {
@@ -1081,7 +1100,9 @@ namespace DG3
 
         private void UpdateObjectSpawnTime()
         {
-            if (!hasObjectSpawn) return;
+            if (!hasObjectSpawn)
+                return;
+
             if (Time.realtimeSinceStartup - objectSpawnTime > 0.1f)
             {
                 hasObjectSpawn = false;
@@ -1227,7 +1248,9 @@ namespace DG3
 
         private void LoadPrefab()
         {
-            if (prefabLocation == null) return;
+            if (prefabLocation == null)
+                return;
+            
             prefab = (GameObject)AssetDatabase.LoadAssetAtPath(prefabLocation, typeof(GameObject));
         }
 
@@ -1235,6 +1258,7 @@ namespace DG3
         {
             if (objectField == null)
                 return;
+
             //dragged from project window, not from scene
             if (PrefabUtility.IsPartOfPrefabAsset(objectField))
             {
@@ -1308,7 +1332,9 @@ namespace DG3
 
         private void OnHierarchyChanged()
         {
-            if (!on || mode != Mode.Delete || !prefabInfo.requireList) return;
+            if (!on || mode != Mode.Delete || !prefabInfo.requireList)
+                return;
+
             UpdateDeletionObjectsList();
         }
 
